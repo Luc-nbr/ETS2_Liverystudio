@@ -1,0 +1,21 @@
+[package]
+name = "ets2-livery-studio"
+version = "0.1.0"
+description = "ETS2 Livery Studio – 3D paint job editor for Euro Truck Simulator 2"
+edition = "2021"
+license = "MIT"
+
+[lib]
+name = "ets2_livery_studio_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+ets2-core = { path = "../crates/ets2-core" }
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
