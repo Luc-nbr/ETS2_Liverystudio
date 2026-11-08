@@ -28,7 +28,7 @@
   "bundle": {
     "active": true,
     "targets": ["nsis", "msi"],
-    "category": "Graphics",
+    "category": "GraphicsAndDesign",
     "shortDescription": "3D livery editor for Euro Truck Simulator 2",
     "icon": [
       "icons/32x32.png",
