@@ -13,8 +13,8 @@ import { exportPng, openProject, saveProject } from "./lib/projectIO";
 import { Viewport3D } from "./viewport/Viewport3D";
 
 setInvalidateCallback(() => useEditor.getState().bumpRender());
-// Handy for debugging/automation from the devtools console.
-(window as unknown as { __livery: typeof useEditor }).__livery = useEditor;
+// Debug/automation hook (dev builds, or append ?debug to the URL).
+if (import.meta.env.DEV || location.search.includes("debug")) (window as unknown as { __livery: typeof useEditor }).__livery = useEditor;
 
 const SIZES = [1024, 2048, 4096, 8192];
 

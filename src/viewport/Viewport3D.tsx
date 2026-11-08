@@ -152,6 +152,7 @@ class ViewportController {
     this.schedulePreview();
     this.loop();
     controller = this;
+    if (import.meta.env.DEV || location.search.includes("debug")) (window as unknown as { __vp: ViewportController }).__vp = this;
   }
 
   dispose() {

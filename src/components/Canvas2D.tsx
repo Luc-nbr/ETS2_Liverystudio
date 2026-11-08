@@ -147,7 +147,8 @@ export function Canvas2D() {
 
     const selected = doc.layers.filter((l) => s.selection.includes(l.id));
     for (const l of selected) {
-      if (l.type === "fill") continue;
+      // projected layers / surface lines are edited in 3D; their UV footprint is shown baked
+      if (l.type === "fill" || l.type === "surfaceLine" || l.projection) continue;
       const corners = docCorners(l, doc.width, doc.height).map(docToScreen);
       ctx.strokeStyle = "#4da3ff";
       ctx.setLineDash([5, 4]);
