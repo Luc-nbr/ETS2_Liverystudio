@@ -18,6 +18,13 @@ export function renderPreview() {
   const doc = activeDoc(s.project);
   const { w, h } = previewSize(doc.width, doc.height);
   renderToCanvas(doc, s.project.palette, w, h, previewCanvas);
+  // In-game (airbrush mode) transparent parts of the mask show the paint job's base colour.
+  const ctx = previewCanvas.getContext("2d")!;
+  ctx.save();
+  ctx.globalCompositeOperation = "destination-over";
+  ctx.fillStyle = s.project.mod.baseColor || "#ffffff";
+  ctx.fillRect(0, 0, w, h);
+  ctx.restore();
   for (const l of listeners) l();
 }
 

@@ -6,21 +6,38 @@ import { importTemplate, pickFile } from "../editor/importers";
 import { useEditor } from "../editor/store";
 import { rebuildMesh, setFlipV } from "../viewport/state";
 
-export async function loadModel(pmdPath: string) {
+/** Loads a model into the 3D view. `add` keeps the current model(s) and shows this one too. */
+export async function loadModel(pmdPath: string, add = false) {
   const s = useEditor.getState();
+  if (add && (s.game.model?.path === pmdPath || s.game.extraModels.some((m) => m.path === pmdPath))) return;
   s.setGame({ loading: `Model laden: ${pmdPath}`, error: null });
   try {
     const model = await api.loadModel(pmdPath, 0);
     const st = useEditor.getState();
-    st.setGame({ model, loading: null });
-    st.set({ paintableOverride: null, uv: { ...st.uv, channel: 0 } });
-    if (st.project.vehicle) st.updateProject({ vehicle: { ...st.project.vehicle, modelPath: pmdPath } });
+    if (add && st.game.model) {
+      st.setGame({ extraModels: [...st.game.extraModels, model], loading: null });
+    } else {
+      st.setGame({ model, extraModels: [], loading: null });
+      st.set({ uv: { ...st.uv, channel: 0 } });
+      if (st.project.vehicle) st.updateProject({ vehicle: { ...st.project.vehicle, modelPath: pmdPath } });
+    }
+    st.set({ paintableOverride: null });
     rebuildMesh();
     const paintable = model.materials.filter((m) => m.paintable).length;
-    st.notify(paintable ? `Model geladen — ${paintable} lakbare materia(a)l(en)` : "Model geladen — geen 'truckpaint'-materiaal gevonden; kies hieronder welke materialen lakbaar zijn", paintable ? "info" : "error");
+    st.notify(
+      paintable ? `Model geladen — ${paintable} lakbare materia(a)l(en)` : "Model geladen — geen 'truckpaint'-materiaal gevonden; kies bij 'Lakbare materialen' wat lakbaar is",
+      paintable ? "info" : "error",
+    );
   } catch (e) {
     useEditor.getState().setGame({ loading: null, error: String(e) });
   }
+}
+
+export function removeExtraModel(path: string) {
+  const s = useEditor.getState();
+  s.setGame({ extraModels: s.game.extraModels.filter((m) => m.path !== path) });
+  s.set({ paintableOverride: null });
+  rebuildMesh();
 }
 
 export function GamePanel() {
@@ -151,9 +168,16 @@ export function GamePanel() {
               </div>
               <div className="row gap wrap">
                 {c.models.slice(0, 3).map((m) => (
-                  <button key={m} className={game.model?.path === m ? "on" : ""} onClick={() => void loadModel(m)} title={m}>
-                    {m.split("/").pop()}
-                  </button>
+                  <span key={m} className="row">
+                    <button className={game.model?.path === m ? "on" : ""} onClick={() => void loadModel(m)} title={m}>
+                      {m.split("/").pop()}
+                    </button>
+                    {game.model && game.model.path !== m && (
+                      <button title="Toevoegen aan de weergave (samen met het huidige model)" onClick={() => void loadModel(m, true)}>
+                        +
+                      </button>
+                    )}
+                  </span>
                 ))}
                 <button
                   title="Maak een aparte textuur die alleen voor deze cabine geëxporteerd wordt (suitable_for)"
@@ -174,9 +198,16 @@ export function GamePanel() {
             <details>
               <summary>Overige modellen ({selected.otherModels.length})</summary>
               {selected.otherModels.map((m) => (
-                <button key={m} className="link-btn block" onClick={() => void loadModel(m)}>
-                  {m}
-                </button>
+                <div key={m} className="row gap">
+                  <button className="link-btn block grow" onClick={() => void loadModel(m)} title="Alleen dit model tonen">
+                    {m}
+                  </button>
+                  {game.model && (
+                    <button className="link-btn" onClick={() => void loadModel(m, true)} title="Toevoegen aan de weergave">
+                      + toevoegen
+                    </button>
+                  )}
+                </div>
               ))}
             </details>
           )}
@@ -196,6 +227,14 @@ export function GamePanel() {
       <div className="section">
         <div className="panel-subtitle">Model & UV</div>
         <div className="muted small">{game.model ? game.model.path : "Demo-cabine (geen spelmodel geladen)"}</div>
+        {game.extraModels.map((m) => (
+          <div key={m.path} className="row gap small">
+            <span className="muted grow">+ {m.path}</span>
+            <button className="x" title="Uit de weergave halen" onClick={() => removeExtraModel(m.path)}>
+              ×
+            </button>
+          </div>
+        ))}
         <div className="row gap wrap">
           <label className="field">
             <span>UV-kanaal</span>
@@ -220,7 +259,7 @@ export function GamePanel() {
           {game.model && (
             <button
               onClick={() => {
-                st().setGame({ model: null });
+                st().setGame({ model: null, extraModels: [] });
                 rebuildMesh();
               }}
             >
@@ -232,25 +271,32 @@ export function GamePanel() {
         {game.model && (
           <details>
             <summary>Lakbare materialen</summary>
-            {game.model.materials.map((m, i) => {
-              const on = override ? override.includes(i) : m.paintable;
-              return (
-                <label key={i} className="field check small">
-                  <input
-                    type="checkbox"
-                    checked={on}
-                    onChange={() => {
-                      const base = override ?? game.model!.materials.map((x, j) => (x.paintable ? j : -1)).filter((j) => j >= 0);
-                      st().set({ paintableOverride: on ? base.filter((j) => j !== i) : [...base, i] });
-                      rebuildMesh();
-                    }}
-                  />
-                  <span title={m.path}>
-                    {m.path.split("/").pop()} <em className="muted">{m.effect}</em>
-                  </span>
-                </label>
-              );
-            })}
+            {[game.model, ...game.extraModels].map((model, mi) => (
+              <div key={model.path}>
+                {mi > 0 && <div className="muted small">{model.path.split("/").pop()}</div>}
+                {model.materials.map((m, i) => {
+                  const key = `${mi}:${i}`;
+                  const auto = [game.model!, ...game.extraModels].flatMap((md, j) => md.materials.map((x, k) => (x.paintable ? `${j}:${k}` : ""))).filter(Boolean);
+                  const on = override ? override.includes(key) : m.paintable;
+                  return (
+                    <label key={key} className="field check small">
+                      <input
+                        type="checkbox"
+                        checked={on}
+                        onChange={() => {
+                          const base = override ?? auto;
+                          st().set({ paintableOverride: on ? base.filter((k) => k !== key) : [...base, key] });
+                          rebuildMesh();
+                        }}
+                      />
+                      <span title={m.path}>
+                        {m.path.split("/").pop()} <em className="muted">{m.effect}</em>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            ))}
           </details>
         )}
         <div className="row gap wrap">

@@ -2,7 +2,7 @@
 
 import { useEditor } from "../editor/store";
 import { getBaker } from "./baker";
-import { buildDemo, buildFromModel, disposeMesh, type PaintMesh } from "./mesh";
+import { buildDemo, buildFromModels, disposeMesh, type PaintMesh } from "./mesh";
 
 let current: PaintMesh | null = null;
 
@@ -22,10 +22,8 @@ export function setMesh(m: PaintMesh) {
 /** (Re)builds the mesh from the loaded game model, or the demo cab when none is loaded. */
 export function rebuildMesh() {
   const s = useEditor.getState();
-  const model = s.game.model;
-  const m = model
-    ? buildFromModel(model, s.uv.channel, s.paintableOverride ? new Set(s.paintableOverride) : null)
-    : buildDemo();
+  const models = s.game.model ? [s.game.model, ...s.game.extraModels] : [];
+  const m = models.length ? buildFromModels(models, s.uv.channel, s.paintableOverride ? new Set(s.paintableOverride) : null) : buildDemo();
   setMesh(m);
 }
 

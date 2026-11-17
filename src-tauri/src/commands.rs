@@ -103,7 +103,13 @@ pub async fn export_mod(request: ExportRequest) -> CmdResult<ExportResult> {
 
 #[tauri::command]
 pub async fn save_text_file(path: String, contents: String) -> CmdResult<()> {
-    blocking(move || std::fs::write(&path, contents).map_err(|e| format!("{path}: {e}"))).await
+    blocking(move || {
+        if let Some(parent) = std::path::Path::new(&path).parent() {
+            std::fs::create_dir_all(parent).map_err(|e| format!("{path}: {e}"))?;
+        }
+        std::fs::write(&path, contents).map_err(|e| format!("{path}: {e}"))
+    })
+    .await
 }
 
 #[tauri::command]

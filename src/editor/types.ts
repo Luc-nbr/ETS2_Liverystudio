@@ -17,7 +17,21 @@ export type Paint =
   | { type: "none" }
   | { type: "solid"; color: ColorRef }
   | { type: "linear"; angle: number; stops: GradientStop[] }
-  | { type: "radial"; cx: number; cy: number; radius: number; stops: GradientStop[] };
+  | { type: "radial"; cx: number; cy: number; radius: number; stops: GradientStop[] }
+  | { type: "pattern"; pattern: PatternKind; color1: ColorRef; color2: ColorRef; scale: number; angle: number };
+
+export type PatternKind = "checker" | "stripes" | "dots" | "grid" | "carbon" | "hex" | "chevron" | "diamond" | "camo" | "halftone";
+
+/** Non-destructive colour adjustments (CSS filter semantics; 100 = unchanged). */
+export interface Adjust {
+  brightness: number;
+  contrast: number;
+  saturate: number;
+  hue: number; // degrees
+  blur: number; // px (layer space)
+  grayscale: number; // 0..100
+  invert: number; // 0..100
+}
 
 export interface Stroke {
   paint: Paint;
@@ -100,6 +114,8 @@ export interface LayerBase {
   clip: boolean;
   /** null = placed directly in UV/texture space (2D); otherwise projected from 3D. */
   projection: Projection | null;
+  /** Optional colour adjustments (filters). */
+  adjust?: Adjust | null;
 }
 
 export type ShapeGeometry =
@@ -146,6 +162,8 @@ export interface TextLayer extends LayerBase {
   align: CanvasTextAlign;
   fill: Paint;
   stroke: Stroke | null;
+  /** Bend the (first line of) text along an arc; total angle in degrees, 0 = straight. */
+  arc?: number;
 }
 
 export interface ImageLayer extends LayerBase {

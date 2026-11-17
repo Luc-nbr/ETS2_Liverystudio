@@ -83,31 +83,36 @@ function finalize(name: string, paintParts: THREE.BufferGeometry[], others: Pain
   };
 }
 
-/** Builds geometry from a game model. `paintable` overrides material detection when given. */
-export function buildFromModel(model: ModelData, channel: number, paintable: Set<number> | null): PaintMesh {
-  const isPaintable = (m: number) => (paintable ? paintable.has(m) : model.materials[m]?.paintable ?? false);
-  const anyPaintable = paintable ? paintable.size > 0 : model.materials.some((m) => m.paintable);
+/**
+ * Builds geometry from one or more game models (e.g. cabin + chassis). `paintable` overrides
+ * material detection when given; keys are "<modelIndex>:<materialIndex>".
+ */
+export function buildFromModels(models: ModelData[], channel: number, paintable: Set<string> | null): PaintMesh {
+  const anyPaintable = paintable ? paintable.size > 0 : models.some((m) => m.materials.some((x) => x.paintable));
   const paintParts: THREE.BufferGeometry[] = [];
   const others: PaintMesh["others"] = [];
   let maxChannels = 0;
-  for (const part of model.parts) {
-    for (const piece of part.pieces) {
-      maxChannels = Math.max(maxChannels, piece.uvChannels);
-      const g = new THREE.BufferGeometry();
-      g.setAttribute("position", new THREE.BufferAttribute(b64ToF32(piece.positions), 3));
-      g.setAttribute("normal", new THREE.BufferAttribute(b64ToF32(piece.normals), 3));
-      g.setIndex(new THREE.BufferAttribute(b64ToU32(piece.indices), 1));
-      const ch = Math.min(channel, piece.uvChannels - 1);
-      const paintThis = piece.uvChannels > 0 && (anyPaintable ? isPaintable(piece.material) : true);
-      if (paintThis) {
-        g.setAttribute("uv", new THREE.BufferAttribute(b64ToF32(piece.uvs[ch]), 2));
-        paintParts.push(g);
-      } else {
-        others.push({ geometry: g, color: 0x6b7078 });
+  models.forEach((model, mi) => {
+    const isPaintable = (m: number) => (paintable ? paintable.has(`${mi}:${m}`) : model.materials[m]?.paintable ?? false);
+    for (const part of model.parts) {
+      for (const piece of part.pieces) {
+        maxChannels = Math.max(maxChannels, piece.uvChannels);
+        const g = new THREE.BufferGeometry();
+        g.setAttribute("position", new THREE.BufferAttribute(b64ToF32(piece.positions), 3));
+        g.setAttribute("normal", new THREE.BufferAttribute(b64ToF32(piece.normals), 3));
+        g.setIndex(new THREE.BufferAttribute(b64ToU32(piece.indices), 1));
+        const ch = Math.min(channel, piece.uvChannels - 1);
+        const paintThis = piece.uvChannels > 0 && (anyPaintable ? isPaintable(piece.material) : true);
+        if (paintThis) {
+          g.setAttribute("uv", new THREE.BufferAttribute(b64ToF32(piece.uvs[ch]), 2));
+          paintParts.push(g);
+        } else {
+          others.push({ geometry: g, color: 0x6b7078 });
+        }
       }
     }
-  }
-  return finalize(model.path, paintParts, others, maxChannels);
+  });
+  return finalize(models.map((m) => m.path).join(" + "), paintParts, others, maxChannels);
 }
 
 // ---------------------------------------------------------------------------

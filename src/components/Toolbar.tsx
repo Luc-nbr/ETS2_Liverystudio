@@ -1,7 +1,7 @@
 import { STRIPE_PRESETS } from "../editor/factory";
-import { importImageFile, pickFile } from "../editor/importers";
+import { importImageFile, importSkin, pickFile } from "../editor/importers";
 import { resolveColor } from "../editor/render";
-import { useEditor, type Tool } from "../editor/store";
+import { activeDoc, allStripePresets, useEditor, type Tool } from "../editor/store";
 import { viewport } from "../viewport/Viewport3D";
 import { NumberField, SliderField } from "./fields";
 
@@ -24,7 +24,7 @@ const TOOLS: { id: Tool; icon: string; label: string; key: string }[] = [
 export const TOOL_KEYS: Record<string, Tool> = Object.fromEntries(TOOLS.map((t) => [t.key.toLowerCase(), t.id]));
 
 export async function importImageSmart() {
-  const f = await pickFile("image/png,image/jpeg,image/webp,image/svg+xml,.svg");
+  const f = await pickFile("image/png,image/jpeg,image/webp,image/svg+xml,.svg,.dds");
   if (!f) return;
   const placed = await viewport()?.placeImage(f);
   if (!placed) await importImageFile(f); // no model under the view centre → place in texture space
@@ -41,8 +41,18 @@ export function Toolbar() {
         </button>
       ))}
       <div className="sep" />
-      <button className="tool" title="PNG / SVG afbeelding importeren (op het model)" onClick={() => void importImageSmart()}>
+      <button className="tool" title="PNG / SVG / DDS afbeelding importeren (op het model)" onClick={() => void importImageSmart()}>
         🖼
+      </button>
+      <button
+        className="tool"
+        title="Bestaande skin (PNG/JPG/DDS) importeren als volledige textuurlaag, om verder te bewerken"
+        onClick={async () => {
+          const f = await pickFile("image/png,image/jpeg,.dds");
+          if (f) await importSkin(f);
+        }}
+      >
+        📂
       </button>
     </div>
   );
@@ -53,8 +63,6 @@ export function ToolOptions() {
   const tool = useEditor((s) => s.tool);
   const brush = useEditor((s) => s.brush);
   const shape = useEditor((s) => s.shapeOpts);
-  const stripePreset = useEditor((s) => s.stripePreset);
-  const palette = useEditor((s) => s.project.palette);
   const set = useEditor((s) => s.set);
 
   if (tool === "brush" || tool === "eraser")
@@ -83,21 +91,55 @@ export function ToolOptions() {
         <NumberField label="Lijndikte" value={shape.strokeWidth} min={0.5} onChange={(v) => set({ shapeOpts: { ...shape, strokeWidth: v } })} />
       </div>
     );
-  if (tool === "stripes")
-    return (
-      <div className="tool-options">
-        <span className="muted">Voorinstelling:</span>
-        {STRIPE_PRESETS.map((p, i) => (
-          <button key={p.name} className={"preset" + (i === stripePreset ? " on" : "")} onClick={() => set({ stripePreset: i })} title={p.name}>
-            <span className="stripe-preview">
-              {p.stripes.map((st, j) => (
-                <i key={j} style={{ background: resolveColor(st.color, palette), height: Math.max(2, st.width / 8), marginTop: j ? p.gap / 8 : 0 }} />
-              ))}
-            </span>
-            {p.name}
-          </button>
-        ))}
-      </div>
-    );
+  if (tool === "stripes") return <StripeOptions />;
   return null;
+}
+
+function StripeOptions() {
+  const stripePreset = useEditor((s) => s.stripePreset);
+  const custom = useEditor((s) => s.customStripePresets);
+  const palette = useEditor((s) => s.project.palette);
+  const selection = useEditor((s) => s.selection);
+  const doc = useEditor((s) => activeDoc(s.project));
+  const st = useEditor.getState;
+  const presets = allStripePresets({ customStripePresets: custom });
+  const selLine = doc.layers.find((l) => selection.includes(l.id) && (l.type === "stripes" || l.type === "surfaceLine"));
+  return (
+    <div className="tool-options">
+      <span className="muted">Voorinstelling:</span>
+      {presets.map((p, i) => (
+        <button key={p.name + i} className={"preset" + (i === stripePreset ? " on" : "")} onClick={() => st().set({ stripePreset: i })} title={p.name}>
+          <span className="stripe-preview">
+            {p.stripes.map((sd, j) => (
+              <i key={j} style={{ background: resolveColor(sd.color, palette), height: Math.max(2, sd.width / 8), marginTop: j ? p.gap / 8 : 0 }} />
+            ))}
+          </span>
+          {p.name}
+          {i >= STRIPE_PRESETS.length && (
+            <span
+              className="x"
+              title="Voorinstelling verwijderen"
+              onClick={(e) => {
+                e.stopPropagation();
+                st().removeStripePreset(p.name);
+              }}
+            >
+              ×
+            </span>
+          )}
+        </button>
+      ))}
+      {selLine && (selLine.type === "stripes" || selLine.type === "surfaceLine") && (
+        <button
+          title="Bewaar de strepen van de geselecteerde lijn als eigen voorinstelling"
+          onClick={() => {
+            const name = prompt("Naam van de voorinstelling:", selLine.name);
+            if (name) st().saveStripePreset({ name, stripes: selLine.stripes.map((x) => ({ ...x })), gap: selLine.gap });
+          }}
+        >
+          + Bewaar selectie
+        </button>
+      )}
+    </div>
+  );
 }

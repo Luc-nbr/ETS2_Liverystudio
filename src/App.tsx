@@ -4,12 +4,14 @@ import { ColorPanel } from "./components/ColorPanel";
 import { ExportDialog } from "./components/ExportDialog";
 import { GamePanel } from "./components/GamePanel";
 import { LayersPanel } from "./components/LayersPanel";
+import { LibraryPanel } from "./components/LibraryPanel";
 import { PropertiesPanel } from "./components/PropertiesPanel";
 import { TOOL_KEYS, Toolbar, ToolOptions } from "./components/Toolbar";
 import { makeTexture, newProject } from "./editor/factory";
 import { setInvalidateCallback } from "./editor/render";
 import { activeDoc, useEditor } from "./editor/store";
-import { exportPng, openProject, saveProject } from "./lib/projectIO";
+import { exportPng, migrate, openProject, saveProject } from "./lib/projectIO";
+import { readAutosave, startAutosave, writeAutosave } from "./lib/autosave";
 import { Viewport3D } from "./viewport/Viewport3D";
 
 setInvalidateCallback(() => useEditor.getState().bumpRender());
@@ -117,6 +119,79 @@ function TopBar({ onExport }: { onExport: () => void }) {
   );
 }
 
+const SHORTCUTS: [string, string][] = [
+  ["Linkermuis op model", "Gereedschap gebruiken"],
+  ["Rechtermuis / Alt+links", "Camera draaien"],
+  ["Middelste muis / scroll", "Schuiven / zoomen"],
+  ["V · A · H", "Selecteren · Knooppunten · Camera"],
+  ["B · E", "Penseel · Gum"],
+  ["R · O · G · S", "Rechthoek · Ellips · Veelhoek · Ster"],
+  ["P · L · T · I", "Pad · Lijnontwerp · Tekst · Pipet"],
+  ["Enter / dubbelklik", "Pad of lijnontwerp afronden"],
+  ["Backspace / Esc", "Laatste punt weg / annuleren"],
+  ["Shift (slepen)", "Proportioneel schalen, draaien per 15°"],
+  ["Ctrl (slepen)", "Decal in zijn vlak schuiven"],
+  ["Pijltjes (+Shift)", "Selectie 1 (10) px verplaatsen"],
+  ["Ctrl+Z / Ctrl+Y", "Ongedaan maken / opnieuw"],
+  ["Ctrl+C · Ctrl+X · Ctrl+V", "Lagen kopiëren · knippen · plakken (ook naar andere textuur)"],
+  ["Ctrl+D · Del", "Dupliceren · Verwijderen"],
+  ["Ctrl+A", "Alles selecteren"],
+  ["Ctrl+S · Ctrl+Shift+S · Ctrl+O", "Opslaan · Opslaan als · Openen"],
+  ["X", "Primaire/secundaire kleur wisselen"],
+  ["[ · ]", "Penseel kleiner / groter"],
+  ["?", "Dit overzicht"],
+];
+
+function HelpDialog({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal">
+        <div className="modal-title">
+          Sneltoetsen
+          <button className="x" onClick={onClose}>
+            ×
+          </button>
+        </div>
+        <div className="help-grid">
+          {SHORTCUTS.flatMap(([k, d]) => [<kbd key={k + "k"}>{k}</kbd>, <span key={k + "d"}>{d}</span>])}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RecoveryBanner() {
+  const [data, setData] = useState<Awaited<ReturnType<typeof readAutosave>>>(null);
+  useEffect(() => {
+    void readAutosave().then((d) => d && !d.clean && setData(d));
+    startAutosave();
+  }, []);
+  if (!data) return null;
+  return (
+    <div className="recovery">
+      Er is een automatisch opgeslagen versie van <b>{data.project.name}</b> ({new Date(data.savedAt).toLocaleString()}) die niet bewaard is.
+      <button
+        className="primary"
+        onClick={() => {
+          useEditor.getState().setProject(migrate(data.project), data.projectPath);
+          useEditor.setState({ dirty: true });
+          setData(null);
+        }}
+      >
+        Herstellen
+      </button>
+      <button
+        onClick={() => {
+          void writeAutosave(true);
+          setData(null);
+        }}
+      >
+        Negeren
+      </button>
+    </div>
+  );
+}
+
 function Toast() {
   const toast = useEditor((s) => s.toast);
   if (!toast) return null;
@@ -159,8 +234,9 @@ function View2DOptions() {
 
 export default function App() {
   const layout = useEditor((s) => s.layout);
-  const [tab, setTab] = useState<"design" | "game">("design");
+  const [tab, setTab] = useState<"design" | "library" | "game">("design");
   const [exporting, setExporting] = useState(false);
+  const [help, setHelp] = useState(false);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -182,6 +258,12 @@ export default function App() {
       } else if (mod && k === "o") {
         e.preventDefault();
         void openProject();
+      } else if (mod && k === "c") {
+        s.copyLayers(s.selection);
+      } else if (mod && k === "x") {
+        s.copyLayers(s.selection, true);
+      } else if (mod && k === "v") {
+        s.pasteLayers();
       } else if (mod && k === "d") {
         e.preventDefault();
         s.duplicateLayers(s.selection);
@@ -196,6 +278,8 @@ export default function App() {
         const dx = e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0;
         const dy = e.key === "ArrowUp" ? -step : e.key === "ArrowDown" ? step : 0;
         s.mapLayers(s.selection, (l) => (l.type === "fill" || l.type === "raster" || l.type === "surfaceLine" ? l : { ...l, x: l.x + dx, y: l.y + dy }));
+      } else if (e.key === "?") {
+        setHelp((h) => !h);
       } else if (!mod && k === "x") {
         s.swapColors();
       } else if (!mod && e.key === "[") {
@@ -241,6 +325,9 @@ export default function App() {
             <button className={tab === "design" ? "on" : ""} onClick={() => setTab("design")}>
               Ontwerp
             </button>
+            <button className={tab === "library" ? "on" : ""} onClick={() => setTab("library")}>
+              Bibliotheek
+            </button>
             <button className={tab === "game" ? "on" : ""} onClick={() => setTab("game")}>
               Spel & model
             </button>
@@ -252,6 +339,11 @@ export default function App() {
                 <PropertiesPanel />
                 <LayersPanel />
               </>
+            ) : tab === "library" ? (
+              <>
+                <LibraryPanel />
+                <LayersPanel />
+              </>
             ) : (
               <GamePanel />
             )}
@@ -259,6 +351,11 @@ export default function App() {
         </aside>
       </div>
       {exporting && <ExportDialog onClose={() => setExporting(false)} />}
+      <RecoveryBanner />
+      {help && <HelpDialog onClose={() => setHelp(false)} />}
+      <button className="help-fab" title="Sneltoetsen (?)" onClick={() => setHelp(true)}>
+        ?
+      </button>
       <Toast />
     </div>
   );

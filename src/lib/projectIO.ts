@@ -4,6 +4,7 @@ import { activeDoc, useEditor } from "../editor/store";
 import type { Project, TextureDoc } from "../editor/types";
 import { pickFile } from "../editor/importers";
 import { api, blobToBase64, isTauri } from "./api";
+import { writeAutosave } from "./autosave";
 
 function download(blob: Blob, name: string) {
   const a = document.createElement("a");
@@ -14,7 +15,7 @@ function download(blob: Blob, name: string) {
 }
 
 /** Older project files: make sure every layer has the fields introduced later. */
-function migrate(p: Project): Project {
+export function migrate(p: Project): Project {
   return {
     ...p,
     textures: p.textures.map((t) => ({ ...t, layers: t.layers.map((l) => ({ ...l, projection: l.projection ?? null })) })),
@@ -38,6 +39,7 @@ export async function saveProject(saveAs = false) {
       download(new Blob([json], { type: "application/json" }), `${s.project.name}.liveryproj`);
       useEditor.setState({ dirty: false });
     }
+    void writeAutosave(true);
     s.notify("Project opgeslagen");
   } catch (e) {
     s.notify(`Opslaan mislukt: ${e}`, "error");

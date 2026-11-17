@@ -4,11 +4,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { rgbaToHex } from "../color/color";
 import { BrushStroke } from "../editor/brush";
-import { STRIPE_PRESETS, makeShape, makeStripes, makeText } from "../editor/factory";
+import { makeShape, makeStripes, makeText } from "../editor/factory";
 import { DEG, docCorners, hitTest, localBounds, recenter, smoothPolyline, toDoc, toLocal } from "../editor/geometry";
 import { importImageFile } from "../editor/importers";
 import { getImage, renderDoc } from "../editor/render";
-import { activeDoc, useEditor } from "../editor/store";
+import { activeDoc, allStripePresets, useEditor } from "../editor/store";
 import type { Layer, ShapeLayer, StripesLayer, TextureDoc, Vec2 } from "../editor/types";
 
 type Drag =
@@ -285,7 +285,8 @@ export function Canvas2D() {
     if (pts.length < 2) return requestDraw();
     const { points, cx, cy } = recenter(pts);
     if (s.tool === "stripes") {
-      const preset = STRIPE_PRESETS[s.stripePreset] ?? STRIPE_PRESETS[0];
+      const presets = allStripePresets(s);
+      const preset = presets[s.stripePreset] ?? presets[0];
       const layer = makeStripes(points, cx, cy, preset.stripes);
       layer.gap = preset.gap;
       layer.closed = closed;

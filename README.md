@@ -28,10 +28,20 @@ Een Windows-programma (Tauri 2) om skins/paintjobs voor **Euro Truck Simulator 2
   - Een **gekoppeld palet**: wijzig één paletkleur en alle lagen die hem gebruiken veranderen mee.
   - Kleurharmonieën genereren en een kleur in het hele ontwerp vervangen.
   - Verlopen (lineair/radiaal) met meerdere kleurstops.
+- **Patronen en effecten:**
+  - Patroonvullingen voor vormen, tekst en vullagen: dambord, strepen, stippen, halftone, raster, carbon, honingraat, chevron, ruit en camouflage.
+  - Per laag kleuraanpassing (helderheid, contrast, verzadiging, tint, grijs, negatief, vervagen).
+  - Gebogen tekst (boog in graden).
+- **Bibliotheek** met kant-en-klare vectorelementen (vlammen, chevrons, snelheidslijnen, swoosh, bliksem, geblokte vlag, nummercirkel, vleugel, tribal, halftone-fade …). Eén klik plaatst het element in de primaire kleur midden in beeld op het model.
+- **Bestaande skins bewerken:** importeer een PNG/JPG/DDS-skin (DXT1/3/5 of ongecomprimeerd) als volledige textuurlaag (📂).
 - **Lagen:**
   - Zichtbaarheid, vergrendelen, dekking en 16 overvloeimodi.
   - Uitknipmaskers, schaduw/gloed, dupliceren en volgorde aanpassen.
-  - Ongedaan maken en opnieuw.
+  - Ongedaan maken en opnieuw; kopiëren/knippen/plakken (ook naar een andere textuur).
+  - Eigen lijnontwerp-voorinstellingen bewaren.
+- **Meerdere modellen tegelijk** in 3D (bijv. cabine + chassis), met per materiaal te kiezen wat lakbaar is.
+- **Lakvoorbeeld** (✦ Lak): basiskleur van de paintjob (zichtbaar door transparante delen, zoals in het spel), metallic, ruwheid en blanke lak.
+- **Automatisch opslaan** elke minuut, met herstel na een crash. Sneltoetsenoverzicht met `?`.
 - **2D-hulpweergave** van de UV-textuur, om precies uit te lijnen en te controleren. Daarin zie je:
   - het gebakken resultaat met de UV-draadlijnen van het model
   - een optionele officiële SCS-template als overlay

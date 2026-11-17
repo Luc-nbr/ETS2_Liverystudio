@@ -160,6 +160,13 @@ export function localBounds(layer: Layer, docW: number, docH: number): Box {
     }
     case "text": {
       const m = measureText(layer);
+      const arc = Math.abs((layer.arc ?? 0) * DEG);
+      if (arc > 0.001) {
+        const R = m.w / arc;
+        const sag = R * (1 - Math.cos(Math.min(Math.PI, arc / 2)));
+        const w = arc >= Math.PI ? 2 * R + layer.fontSize : 2 * R * Math.sin(arc / 2) + layer.fontSize;
+        return { x: -w / 2, y: -m.h / 2 - sag / 2 - layer.fontSize / 2, w, h: m.h + sag + layer.fontSize };
+      }
       const x = layer.align === "left" || layer.align === "start" ? 0 : layer.align === "right" || layer.align === "end" ? -m.w : -m.w / 2;
       return { x, y: -m.h / 2, w: m.w, h: m.h };
     }

@@ -5,6 +5,7 @@ import { contrastText } from "../color/color";
 import { resolveColor } from "../editor/render";
 import { useEditor } from "../editor/store";
 import type { ColorRef, Paint } from "../editor/types";
+import { PATTERNS } from "../editor/patterns";
 import { ColorPicker } from "./ColorPicker";
 
 export function NumberField(props: {
@@ -118,7 +119,8 @@ export function ColorField({ value, onChange, label }: { value: ColorRef; onChan
 export function PaintEditor({ paint, onChange, allowNone = true }: { paint: Paint; onChange: (p: Paint, final: boolean) => void; allowNone?: boolean }) {
   const primary = useEditor((s) => s.primary);
   const secondary = useEditor((s) => s.secondary);
-  const firstColor = paint.type === "solid" ? paint.color : paint.type === "none" ? primary : paint.stops[0]?.color ?? primary;
+  const firstColor =
+    paint.type === "solid" ? paint.color : paint.type === "none" ? primary : paint.type === "pattern" ? paint.color1 : paint.stops[0]?.color ?? primary;
   const setType = (t: Paint["type"]) => {
     switch (t) {
       case "none":
@@ -129,17 +131,39 @@ export function PaintEditor({ paint, onChange, allowNone = true }: { paint: Pain
         return onChange({ type: "linear", angle: 0, stops: paint.type === "radial" ? paint.stops : [{ offset: 0, color: firstColor }, { offset: 1, color: secondary }] }, true);
       case "radial":
         return onChange({ type: "radial", cx: 0.5, cy: 0.5, radius: 1, stops: paint.type === "linear" ? paint.stops : [{ offset: 0, color: firstColor }, { offset: 1, color: secondary }] }, true);
+      case "pattern":
+        return onChange({ type: "pattern", pattern: "checker", color1: firstColor, color2: secondary, scale: 80, angle: 0 }, true);
     }
   };
   return (
     <div className="paint-editor">
       <div className="seg">
-        {(allowNone ? (["none", "solid", "linear", "radial"] as const) : (["solid", "linear", "radial"] as const)).map((t) => (
+        {(allowNone ? (["none", "solid", "linear", "radial", "pattern"] as const) : (["solid", "linear", "radial", "pattern"] as const)).map((t) => (
           <button key={t} className={paint.type === t ? "on" : ""} onClick={() => setType(t)}>
-            {{ none: "Geen", solid: "Effen", linear: "Lineair", radial: "Radiaal" }[t]}
+            {{ none: "Geen", solid: "Effen", linear: "Lineair", radial: "Radiaal", pattern: "Patroon" }[t]}
           </button>
         ))}
       </div>
+      {paint.type === "pattern" && (
+        <>
+          <div className="pattern-grid">
+            {PATTERNS.map((p) => (
+              <button key={p.id} className={paint.pattern === p.id ? "on" : ""} onClick={() => onChange({ ...paint, pattern: p.id }, true)}>
+                {p.name}
+              </button>
+            ))}
+          </div>
+          <div className="row gap wrap">
+            <ColorField value={paint.color1} onChange={(c, f) => onChange({ ...paint, color1: c }, f)} />
+            <ColorField value={paint.color2} onChange={(c, f) => onChange({ ...paint, color2: c }, f)} />
+            <button title="Kleuren wisselen" onClick={() => onChange({ ...paint, color1: paint.color2, color2: paint.color1 }, true)}>
+              ⇄
+            </button>
+          </div>
+          <SliderField label="Grootte" min={4} max={1000} step={1} value={paint.scale} onChange={(v, f) => onChange({ ...paint, scale: v }, f)} />
+          <SliderField label="Hoek" min={-180} max={180} step={1} value={paint.angle} onChange={(v, f) => onChange({ ...paint, angle: v }, f)} format={(v) => `${v}°`} />
+        </>
+      )}
       {paint.type === "solid" && <ColorField value={paint.color} onChange={(c, f) => onChange({ ...paint, color: c }, f)} />}
       {(paint.type === "linear" || paint.type === "radial") && (
         <>

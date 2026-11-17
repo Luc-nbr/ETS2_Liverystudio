@@ -3,17 +3,18 @@
 // Mouse: left = active tool (on the model) or orbit (on empty space / Alt held),
 // right = orbit, middle = pan, wheel = zoom.
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { ColorField, SliderField } from "../components/fields";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { rgbaToHex } from "../color/color";
 import { Brush3DStroke } from "../editor/brush";
-import { STRIPE_PRESETS, makeProjection, makeShape, makeSurfaceLine, makeText } from "../editor/factory";
+import { makeProjection, makeShape, makeSurfaceLine, makeText } from "../editor/factory";
 import { DEG, docCorners, hitTest, localBounds, normalizeAngle, recenter, scaleByCorner, smoothPolyline, toDoc, toLocal } from "../editor/geometry";
 import { fileToImageLayer } from "../editor/importers";
 import { isProjected } from "../editor/render";
-import { activeDoc, useEditor, type EditorState } from "../editor/store";
+import { activeDoc, allStripePresets, useEditor, type EditorState } from "../editor/store";
 import type { Layer, Projection, ShapeLayer, SurfaceLineLayer, SurfacePoint, TextureDoc, V3, Vec2 } from "../editor/types";
 import { getBaker, sampleSurfaceLine } from "./baker";
 import { onPreviewUpdated, previewCanvas, renderPreview, samplePreview } from "./composite";
@@ -175,6 +176,12 @@ class ViewportController {
   onStore(s: EditorState, prev: EditorState) {
     if (s.meshVersion !== this.lastMeshVersion) this.syncMesh();
     if (s.project !== prev.project || s.renderVersion !== prev.renderVersion) this.schedulePreview();
+    if (s.finish !== prev.finish) {
+      this.paintMat.metalness = s.finish.metalness;
+      this.paintMat.roughness = s.finish.roughness;
+      this.paintMat.clearcoat = s.finish.clearcoat;
+      this.invalidate();
+    }
     if (s.uv.flipV !== prev.uv.flipV) {
       this.texture.flipY = s.uv.flipV;
       this.texture.needsUpdate = true;
@@ -746,7 +753,8 @@ class ViewportController {
     const s = useEditor.getState();
     if (d.kind === "line") {
       if (d.points.length < 2) return;
-      const preset = STRIPE_PRESETS[s.stripePreset] ?? STRIPE_PRESETS[0];
+      const presets = allStripePresets(s);
+      const preset = presets[s.stripePreset] ?? presets[0];
       s.addLayer(makeSurfaceLine(d.points, preset.stripes, preset.gap, s.symmetry));
       return;
     }
@@ -896,16 +904,31 @@ class ViewportController {
   /** Places an imported image as a decal where the given screen point (default: centre) hits the model. */
   async placeImage(file: File, clientX?: number, clientY?: number): Promise<boolean> {
     const r = this.renderer.domElement.getBoundingClientRect();
-    const hit = this.pick(clientX ?? r.left + r.width / 2, clientY ?? r.top + r.height / 2);
-    if (!hit) return false;
+    if (!this.pick(clientX ?? r.left + r.width / 2, clientY ?? r.top + r.height / 2)) return false;
     const res = await fileToImageLayer(file);
     if (!res) return true;
-    const { layer, natW, natH } = res;
-    const s = useEditor.getState();
-    const scale = Math.min(600 / natW, 600 / natH); // ~60 cm on the longest side
-    layer.w = natW * scale;
-    layer.h = natH * scale;
+    res.layer.w = res.natW;
+    res.layer.h = res.natH;
+    return this.placeLayer(res.layer, 600, clientX, clientY);
+  }
+
+  /**
+   * Places an (image/shape/text) layer as a decal where the screen point (default: view centre)
+   * hits the model, fitted to `maxPx` plane pixels (1 px = 1 mm). Returns false when nothing is hit.
+   */
+  placeLayer(layer: Layer, maxPx: number, clientX?: number, clientY?: number): boolean {
+    const r = this.renderer.domElement.getBoundingClientRect();
+    const hit = this.pick(clientX ?? r.left + r.width / 2, clientY ?? r.top + r.height / 2);
+    if (!hit) return false;
+    if (layer.type === "image") {
+      const scale = Math.min(maxPx / layer.w, maxPx / layer.h);
+      layer.w *= scale;
+      layer.h *= scale;
+    }
+    layer.x = 0;
+    layer.y = 0;
     layer.projection = this.newProjection(hit);
+    const s = useEditor.getState();
     s.addLayer(layer, true);
     s.set({ tool: "select" });
     return true;
@@ -951,6 +974,36 @@ export function Viewport3D() {
   );
 }
 
+function FinishPopover() {
+  const finish = useEditor((s) => s.finish);
+  const baseColor = useEditor((s) => s.project.mod.baseColor);
+  const [open, setOpen] = useState(false);
+  const st = useEditor.getState;
+  return (
+    <span className="finish">
+      <button className={open ? "on" : ""} onClick={() => setOpen(!open)} title="Lakvoorbeeld (alleen weergave) en basiskleur van de paintjob">
+        ✦ Lak
+      </button>
+      {open && (
+        <div className="finish-pop">
+          <ColorField
+            label="Basiskleur"
+            value={baseColor}
+            onChange={(c) => {
+              const hex = c.startsWith("pal:") ? st().project.palette.find((p) => `pal:${p.id}` === c)?.hex ?? "#ffffff" : c;
+              st().updateProject({ mod: { ...st().project.mod, baseColor: hex } });
+            }}
+          />
+          <p className="muted small">Transparante delen van je ontwerp tonen in het spel de basiskleur.</p>
+          <SliderField label="Metallic" min={0} max={1} value={finish.metalness} onChange={(v) => st().set({ finish: { ...finish, metalness: v } })} />
+          <SliderField label="Ruwheid" min={0} max={1} value={finish.roughness} onChange={(v) => st().set({ finish: { ...finish, roughness: v } })} />
+          <SliderField label="Blanke lak" min={0} max={1} value={finish.clearcoat} onChange={(v) => st().set({ finish: { ...finish, clearcoat: v } })} />
+        </div>
+      )}
+    </span>
+  );
+}
+
 function ViewportHud() {
   const tool = useEditor((s) => s.tool);
   const symmetry = useEditor((s) => s.symmetry);
@@ -990,6 +1043,7 @@ function ViewportHud() {
         >
           ◎ Vanuit camera
         </button>
+        <FinishPopover />
       </div>
       {hints[tool] && <div className="hint">{hints[tool]}</div>}
     </div>

@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { GameIndex, Installation, ModelData } from "../lib/api";
-import { cloneLayer, newProject, uid } from "./factory";
-import type { ColorRef, Layer, Paint, PaletteColor, Project, TextureDoc } from "./types";
+import { STRIPE_PRESETS, cloneLayer, newProject, uid } from "./factory";
+import type { ColorRef, Layer, Paint, PaletteColor, Project, StripeDef, TextureDoc } from "./types";
 
 export type Tool =
   | "select"
@@ -35,6 +35,8 @@ export interface GameState {
   loading: string | null;
   error: string | null;
   model: ModelData | null;
+  /** Additional models shown together with `model` (chassis, accessories, …). */
+  extraModels: ModelData[];
 }
 
 export interface EditorState {
@@ -51,6 +53,10 @@ export interface EditorState {
   brush: { size: number; hardness: number; opacity: number };
   shapeOpts: { sides: number; points: number; inner: number; radius: number; strokeWidth: number; withStroke: boolean };
   stripePreset: number;
+  /** User-defined line-design presets (persisted in localStorage). */
+  customStripePresets: StripePreset[];
+  /** Copied layers (Ctrl+C / Ctrl+V), also across textures. */
+  clipboard: Layer[];
   view: { zoom: number; panX: number; panY: number; fitRequest: number };
   showUv: boolean;
   showTemplate: boolean;
@@ -64,10 +70,12 @@ export interface EditorState {
   symmetry: boolean;
   /** Orientation of new decals: surface normal, or the camera's viewing direction. */
   projectFrom: "surface" | "view";
+  /** Preview-only paint finish in the 3D view. */
+  finish: { metalness: number; roughness: number; clearcoat: number };
   /** Changes whenever the 3D paint mesh is replaced (see viewport/state.ts). */
   meshVersion: number;
-  /** Material indices treated as paintable (null = auto-detect "truckpaint"). */
-  paintableOverride: number[] | null;
+  /** "<modelIndex>:<materialIndex>" treated as paintable (null = auto-detect "truckpaint"). */
+  paintableOverride: string[] | null;
   renderVersion: number;
   game: GameState;
   toast: { text: string; kind: "info" | "error" } | null;
@@ -98,6 +106,10 @@ export interface EditorState {
   setSecondary: (c: ColorRef) => void;
   swapColors: () => void;
   applyColorToSelection: (c: ColorRef, target: "fill" | "stroke") => void;
+  copyLayers: (ids: string[], cut?: boolean) => void;
+  pasteLayers: () => void;
+  saveStripePreset: (p: StripePreset) => void;
+  removeStripePreset: (name: string) => void;
   set: (patch: Partial<EditorState>) => void;
   setGame: (patch: Partial<GameState>) => void;
   notify: (text: string, kind?: "info" | "error") => void;
@@ -105,6 +117,26 @@ export interface EditorState {
 }
 
 const HISTORY_LIMIT = 150;
+
+export interface StripePreset {
+  name: string;
+  stripes: StripeDef[];
+  gap: number;
+}
+const PRESET_KEY = "ets2-livery-stripe-presets";
+function loadCustomPresets(): StripePreset[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(PRESET_KEY) ?? "[]");
+    return Array.isArray(v) ? v : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Built-in + user line-design presets, in the order shown in the tool options. */
+export function allStripePresets(s: { customStripePresets: StripePreset[] }): StripePreset[] {
+  return [...STRIPE_PRESETS, ...s.customStripePresets];
+}
 
 export const activeDoc = (p: Project): TextureDoc => p.textures.find((t) => t.id === p.activeTextureId) ?? p.textures[0];
 
@@ -118,6 +150,8 @@ function mapPaintColors(paint: Paint, fn: (c: ColorRef) => ColorRef): Paint {
       return paint;
     case "solid":
       return { ...paint, color: fn(paint.color) };
+    case "pattern":
+      return { ...paint, color1: fn(paint.color1), color2: fn(paint.color2) };
     default:
       return { ...paint, stops: paint.stops.map((s) => ({ ...s, color: fn(s.color) })) };
   }
@@ -175,6 +209,8 @@ export const useEditor = create<EditorState>((set, get) => {
     brush: { size: 40, hardness: 0.8, opacity: 1 },
     shapeOpts: { sides: 6, points: 5, inner: 0.45, radius: 0, strokeWidth: 12, withStroke: false },
     stripePreset: 2,
+    customStripePresets: loadCustomPresets(),
+    clipboard: [],
     view: { zoom: 0.2, panX: 40, panY: 40, fitRequest: 1 },
     showUv: true,
     showTemplate: true,
@@ -186,10 +222,11 @@ export const useEditor = create<EditorState>((set, get) => {
     layout: "split",
     symmetry: false,
     projectFrom: "surface",
+    finish: { metalness: 0.05, roughness: 0.32, clearcoat: 1 },
     meshVersion: 0,
     paintableOverride: null,
     renderVersion: 0,
-    game: { installations: [], index: null, loading: null, error: null, model: null },
+    game: { installations: [], index: null, loading: null, error: null, model: null, extraModels: [] },
     toast: null,
 
     setProject: (p, path = null) =>
@@ -419,6 +456,56 @@ export const useEditor = create<EditorState>((set, get) => {
             return l;
         }
       });
+    },
+
+    copyLayers: (ids, cut = false) => {
+      const doc = activeDoc(get().project);
+      const layers = doc.layers.filter((l) => ids.includes(l.id) && l.type !== "fill");
+      if (!layers.length) return;
+      set({ clipboard: layers.map((l) => JSON.parse(JSON.stringify(l)) as Layer) });
+      if (cut) get().removeLayers(layers.map((l) => l.id));
+      get().notify(`${layers.length} laag/lagen ${cut ? "geknipt" : "gekopieerd"}`);
+    },
+
+    pasteLayers: () => {
+      const { clipboard, project } = get();
+      if (!clipboard.length) return;
+      const doc = activeDoc(project);
+      const pasted = clipboard.map((l) => {
+        const c = { ...cloneLayer(l), name: l.name };
+        if (c.type === "raster") {
+          c.w = doc.width;
+          c.h = doc.height;
+          c.x = doc.width / 2;
+          c.y = doc.height / 2;
+        } else if (!c.projection && c.type !== "surfaceLine" && doc.layers.some((x) => x.id === l.id)) {
+          c.x += 40;
+          c.y += 40;
+        }
+        return c;
+      });
+      commit(withDoc(project, (d) => ({ ...d, layers: [...d.layers, ...pasted] })), true);
+      set({ selection: pasted.map((l) => l.id) });
+    },
+
+    saveStripePreset: (p) => {
+      const list = [...get().customStripePresets.filter((x) => x.name !== p.name), p];
+      set({ customStripePresets: list });
+      try {
+        localStorage.setItem(PRESET_KEY, JSON.stringify(list));
+      } catch {
+        /* storage unavailable */
+      }
+    },
+
+    removeStripePreset: (name) => {
+      const list = get().customStripePresets.filter((x) => x.name !== name);
+      set({ customStripePresets: list, stripePreset: 0 });
+      try {
+        localStorage.setItem(PRESET_KEY, JSON.stringify(list));
+      } catch {
+        /* storage unavailable */
+      }
     },
 
     set: (patch) => set(patch),

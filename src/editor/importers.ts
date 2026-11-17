@@ -1,5 +1,6 @@
 import { makeImage } from "./factory";
 import type { ImageLayer } from "./types";
+import { ddsToDataUrl } from "../lib/dds";
 import { activeDoc, useEditor } from "./store";
 
 export function readAsDataUrl(file: Blob): Promise<string> {
@@ -56,6 +57,15 @@ export async function fileToImageLayer(file: File): Promise<{ layer: ImageLayer;
     const svg = normaliseSvg(text);
     size = svgSize(svg);
     src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svg)));
+  } else if (file.name.toLowerCase().endsWith(".dds")) {
+    try {
+      const d = await ddsToDataUrl(file);
+      src = d.url;
+      size = { w: d.width, h: d.height };
+    } catch (e) {
+      s.notify(String(e instanceof Error ? e.message : e), "error");
+      return null;
+    }
   } else if (file.type.startsWith("image/")) {
     src = await readAsDataUrl(file);
     size = await imageSize(src);
@@ -101,4 +111,26 @@ export function pickFile(accept: string): Promise<File | null> {
     input.onchange = () => resolve(input.files?.[0] ?? null);
     input.click();
   });
+}
+
+/**
+ * Imports an existing skin texture (PNG/JPG/DDS) as a full-size layer in texture space,
+ * so an old paint job can be edited further.
+ */
+export async function importSkin(file: File): Promise<void> {
+  const s = useEditor.getState();
+  const doc = activeDoc(s.project);
+  const res = await fileToImageLayer(file);
+  if (!res) return;
+  const { layer, natW, natH } = res;
+  layer.name = `Skin: ${layer.name}`;
+  layer.w = doc.width;
+  layer.h = doc.height;
+  layer.x = doc.width / 2;
+  layer.y = doc.height / 2;
+  // keep it right above the background
+  s.select([doc.layers[0]?.id].filter(Boolean) as string[]);
+  s.addLayer(layer, true);
+  if (natW / natH !== doc.width / doc.height) s.notify("Let op: de verhouding van de skin wijkt af van de textuur — hij is uitgerekt", "error");
+  else s.notify(`Skin geïmporteerd (${natW}×${natH})`);
 }

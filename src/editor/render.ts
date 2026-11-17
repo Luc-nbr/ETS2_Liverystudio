@@ -3,7 +3,8 @@
 
 import { hexToCss } from "../color/color";
 import { DEG, localBounds, measureText, offsetPolyline, shapePath, smoothPolyline, stripesTotalWidth, textFont, type Box } from "./geometry";
-import type { ColorRef, Layer, Paint, PaletteColor, RasterLayer, Stroke, TextureDoc } from "./types";
+import type { Adjust, ColorRef, Layer, Paint, PaletteColor, RasterLayer, Stroke, TextureDoc } from "./types";
+import { makePattern } from "./patterns";
 
 type Ctx2D = CanvasRenderingContext2D;
 
@@ -124,7 +125,7 @@ export function resolveColor(ref: ColorRef, palette: PaletteColor[]): string {
   return ref;
 }
 
-function makeFillStyle(ctx: Ctx2D, paint: Paint, b: Box, palette: PaletteColor[]): string | CanvasGradient | null {
+function makeFillStyle(ctx: Ctx2D, paint: Paint, b: Box, palette: PaletteColor[]): string | CanvasGradient | CanvasPattern | null {
   switch (paint.type) {
     case "none":
       return null;
@@ -146,7 +147,23 @@ function makeFillStyle(ctx: Ctx2D, paint: Paint, b: Box, palette: PaletteColor[]
       for (const s of paint.stops) g.addColorStop(Math.min(1, Math.max(0, s.offset)), hexToCss(resolveColor(s.color, palette)));
       return g;
     }
+    case "pattern":
+      return makePattern(ctx, paint.pattern, hexToCss(resolveColor(paint.color1, palette)), hexToCss(resolveColor(paint.color2, palette)), Math.max(1, paint.scale), paint.angle, deviceScale(ctx));
   }
+}
+
+/** CSS filter string for a layer's colour adjustments ("none" when untouched). */
+export function adjustFilter(a: Adjust | null | undefined, scale: number): string {
+  if (!a) return "none";
+  const f: string[] = [];
+  if (a.brightness !== 100) f.push(`brightness(${a.brightness}%)`);
+  if (a.contrast !== 100) f.push(`contrast(${a.contrast}%)`);
+  if (a.saturate !== 100) f.push(`saturate(${a.saturate}%)`);
+  if (a.hue) f.push(`hue-rotate(${a.hue}deg)`);
+  if (a.grayscale) f.push(`grayscale(${a.grayscale}%)`);
+  if (a.invert) f.push(`invert(${a.invert}%)`);
+  if (a.blur > 0) f.push(`blur(${a.blur * scale}px)`);
+  return f.length ? f.join(" ") : "none";
 }
 
 function applyStroke(ctx: Ctx2D, stroke: Stroke, b: Box, palette: PaletteColor[]): boolean {
@@ -241,6 +258,37 @@ function drawLayerContent(ctx: Ctx2D, layer: Layer, doc: TextureDoc, palette: Pa
       ctx.textBaseline = "middle";
       const lh = layer.fontSize * layer.lineHeight;
       const fillStyle = makeFillStyle(ctx, layer.fill, b, palette);
+      const arc = (layer.arc ?? 0) * DEG;
+      if (Math.abs(arc) > 0.001) {
+        // Text on an arc: every glyph is placed and rotated along a circle.
+        (ctx as unknown as { letterSpacing: string }).letterSpacing = "0px";
+        ctx.textAlign = "center";
+        const sign = arc > 0 ? 1 : -1;
+        const R = Math.max(1, m.w / Math.abs(arc));
+        const hasStroke = !!layer.stroke && applyStroke(ctx, layer.stroke, b, palette);
+        m.lines.forEach((line, i) => {
+          const y0 = -m.h / 2 + lh / 2 + i * lh + (sign * R * (1 - Math.cos(Math.abs(arc) / 2))) / 2;
+          const glyphs = Array.from(line);
+          const widths = glyphs.map((g) => ctx.measureText(g).width + layer.letterSpacing);
+          const total = widths.reduce((s2, w) => s2 + w, 0);
+          const cy = y0 + sign * R;
+          let acc = 0;
+          glyphs.forEach((g, k) => {
+            const theta = (acc + widths[k] / 2 - total / 2) / R;
+            acc += widths[k];
+            ctx.save();
+            ctx.translate(Math.sin(theta) * R, cy - sign * Math.cos(theta) * R);
+            ctx.rotate(sign * theta);
+            if (hasStroke) ctx.strokeText(g, 0, 0);
+            if (fillStyle) {
+              ctx.fillStyle = fillStyle;
+              ctx.fillText(g, 0, 0);
+            }
+            ctx.restore();
+          });
+        });
+        break;
+      }
       m.lines.forEach((line, i) => {
         const y = -m.h / 2 + lh / 2 + i * lh;
         if (layer.stroke && applyStroke(ctx, layer.stroke, b, palette)) ctx.strokeText(line, 0, y);
@@ -296,6 +344,7 @@ export function drawLayer(ctx: Ctx2D, layer: Layer, doc: TextureDoc, palette: Pa
     ctx.shadowOffsetX = layer.shadow.offsetX * s;
     ctx.shadowOffsetY = layer.shadow.offsetY * s;
   }
+  if (layer.adjust) ctx.filter = adjustFilter(layer.adjust, deviceScale(ctx));
   ctx.translate(layer.x, layer.y);
   ctx.rotate(layer.rotation * DEG);
   ctx.scale(layer.scaleX, layer.scaleY);

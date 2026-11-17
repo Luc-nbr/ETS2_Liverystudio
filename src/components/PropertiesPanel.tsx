@@ -1,10 +1,11 @@
 import { useRef } from "react";
 import { isProjected } from "../editor/render";
 import { activeDoc, useEditor } from "../editor/store";
-import type { BlendMode, Layer, Projection, ShapeLayer, StripeDef, Stroke, TextLayer } from "../editor/types";
+import type { Adjust, BlendMode, Layer, Projection, ShapeLayer, StripeDef, Stroke, TextLayer } from "../editor/types";
 import { getRasterCanvas, markRasterSynced } from "../editor/render";
 import { viewport } from "../viewport/Viewport3D";
 import { defaultUp } from "../viewport/frame";
+import { currentMesh } from "../viewport/state";
 import { ColorField, NumberField, PaintEditor, SliderField } from "./fields";
 
 const BLENDS: [BlendMode, string][] = [
@@ -147,6 +148,7 @@ function LayerProps({ layer }: { layer: Layer }) {
 
       {layer.projection && projected && <ProjectionProps projection={layer.projection} onChange={(p, f) => edit({ projection: p }, f)} />}
       <TypeProps layer={layer} edit={edit} />
+      {layer.type !== "surfaceLine" && <AdjustProps layer={layer} edit={edit} />}
       {layer.type !== "surfaceLine" && <ShadowProps layer={layer} edit={edit} />}
     </div>
   );
@@ -179,6 +181,15 @@ function ProjectionProps({ projection: p, onChange }: { projection: Projection; 
           ◎ Richt op camera
         </button>
         <button onClick={() => onChange({ ...p, up: defaultUp(p.normal) }, true)}>Rechtzetten</button>
+        <button
+          title="Zet het midden van de decal op de middenlijn van de truck (voor- of achterkant)"
+          onClick={() => {
+            const m = currentMesh();
+            if (m) onChange({ ...p, origin: [m.symmetryX, p.origin[1], p.origin[2]] }, true);
+          }}
+        >
+          ⇹ Op middenlijn
+        </button>
       </div>
     </Section>
   );
@@ -419,6 +430,7 @@ function TextProps({ layer, edit }: { layer: TextLayer; edit: (p: Partial<Layer>
           <NumberField label="Spatiëring" value={layer.letterSpacing} onChange={(v) => edit({ letterSpacing: v } as Partial<Layer>)} />
           <NumberField label="Regelafstand" value={layer.lineHeight} step={0.05} min={0.5} onChange={(v) => edit({ lineHeight: v } as Partial<Layer>)} />
         </div>
+        <SliderField label="Boog" min={-360} max={360} step={1} value={layer.arc ?? 0} onChange={(v, f) => edit({ arc: v } as Partial<Layer>, f)} format={(v) => `${v}°`} />
         <div className="row gap">
           <button className={layer.bold ? "on" : ""} onClick={() => edit({ bold: !layer.bold } as Partial<Layer>)}>
             <b>B</b>
@@ -457,6 +469,33 @@ function ShadowProps({ layer, edit }: { layer: Layer; edit: (p: Partial<Layer>, 
             <NumberField label="X" value={sh.offsetX} onChange={(v) => edit({ shadow: { ...sh, offsetX: v } })} />
             <NumberField label="Y" value={sh.offsetY} onChange={(v) => edit({ shadow: { ...sh, offsetY: v } })} />
           </div>
+        </>
+      )}
+    </Section>
+  );
+}
+
+const NO_ADJUST: Adjust = { brightness: 100, contrast: 100, saturate: 100, hue: 0, blur: 0, grayscale: 0, invert: 0 };
+
+function AdjustProps({ layer, edit }: { layer: Layer; edit: (p: Partial<Layer>, final?: boolean) => void }) {
+  const a = layer.adjust ?? null;
+  const set = (patch: Partial<Adjust>, final: boolean) => edit({ adjust: { ...(a ?? NO_ADJUST), ...patch } }, final);
+  return (
+    <Section title="Kleuraanpassing">
+      <label className="field check">
+        <input type="checkbox" checked={!!a} onChange={(e) => edit({ adjust: e.target.checked ? { ...NO_ADJUST } : null })} />
+        <span>Filters (helderheid, contrast, tint…)</span>
+      </label>
+      {a && (
+        <>
+          <SliderField label="Helderheid" min={0} max={300} step={1} value={a.brightness} onChange={(v, f) => set({ brightness: v }, f)} format={(v) => `${v}%`} />
+          <SliderField label="Contrast" min={0} max={300} step={1} value={a.contrast} onChange={(v, f) => set({ contrast: v }, f)} format={(v) => `${v}%`} />
+          <SliderField label="Verzadiging" min={0} max={300} step={1} value={a.saturate} onChange={(v, f) => set({ saturate: v }, f)} format={(v) => `${v}%`} />
+          <SliderField label="Tint" min={-180} max={180} step={1} value={a.hue} onChange={(v, f) => set({ hue: v }, f)} format={(v) => `${v}°`} />
+          <SliderField label="Grijs" min={0} max={100} step={1} value={a.grayscale} onChange={(v, f) => set({ grayscale: v }, f)} format={(v) => `${v}%`} />
+          <SliderField label="Negatief" min={0} max={100} step={1} value={a.invert} onChange={(v, f) => set({ invert: v }, f)} format={(v) => `${v}%`} />
+          <SliderField label="Vervagen" min={0} max={100} step={0.5} value={a.blur} onChange={(v, f) => set({ blur: v }, f)} format={(v) => `${v}px`} />
+          <button onClick={() => edit({ adjust: { ...NO_ADJUST } })}>Reset</button>
         </>
       )}
     </Section>
