@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Canvas2D } from "./components/Canvas2D";
 import { ColorPanel } from "./components/ColorPanel";
 import { ExportDialog } from "./components/ExportDialog";
@@ -10,7 +10,8 @@ import { TOOL_KEYS, Toolbar, ToolOptions } from "./components/Toolbar";
 import { makeTexture, newProject } from "./editor/factory";
 import { setInvalidateCallback } from "./editor/render";
 import { activeDoc, useEditor } from "./editor/store";
-import { exportPng, migrate, openProject, saveProject } from "./lib/projectIO";
+import { exportPng, migrate, openProject, openProjectPath, recentProjects, saveProject } from "./lib/projectIO";
+import { isTauri } from "./lib/api";
 import { readAutosave, startAutosave, writeAutosave } from "./lib/autosave";
 import { Viewport3D } from "./viewport/Viewport3D";
 
@@ -94,6 +95,24 @@ function TopBar({ onExport }: { onExport: () => void }) {
           Nieuw
         </button>
         <button onClick={() => void openProject()}>Openen</button>
+        {isTauri() && recentProjects().length > 0 && (
+          <select
+            value=""
+            title="Recente projecten"
+            onChange={(e) => {
+              if (!e.target.value) return;
+              if (dirty && !confirm("Niet-opgeslagen wijzigingen gaan verloren. Doorgaan?")) return;
+              void openProjectPath(e.target.value);
+            }}
+          >
+            <option value="">Recent…</option>
+            {recentProjects().map((p) => (
+              <option key={p} value={p}>
+                {p.split(/[\\/]/).pop()}
+              </option>
+            ))}
+          </select>
+        )}
         <button onClick={() => void saveProject()}>Opslaan</button>
         <button onClick={() => void saveProject(true)}>Opslaan als</button>
         <span className="sep" />
@@ -237,6 +256,34 @@ export default function App() {
   const [tab, setTab] = useState<"design" | "library" | "game">("design");
   const [exporting, setExporting] = useState(false);
   const [help, setHelp] = useState(false);
+  const viewsRef = useRef<HTMLDivElement>(null);
+  const [split, setSplit] = useState(() => {
+    try {
+      const v = Number(localStorage.getItem("ets2-livery-split"));
+      return v > 0.2 && v < 0.9 ? v : 0.62;
+    } catch {
+      return 0.62;
+    }
+  });
+  const startSplit = (e: React.PointerEvent) => {
+    e.preventDefault();
+    const box = viewsRef.current!.getBoundingClientRect();
+    const move = (ev: PointerEvent) => setSplit(Math.min(0.88, Math.max(0.25, (ev.clientX - box.left) / box.width)));
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      setSplit((v) => {
+        try {
+          localStorage.setItem("ets2-livery-split", String(v));
+        } catch {
+          /* ignore */
+        }
+        return v;
+      });
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -308,15 +355,18 @@ export default function App() {
         <Toolbar />
         <div className="center">
           <ToolOptions />
-          <div className={"views layout-" + layout}>
-            <div className="view3d-wrap">
+          <div className={"views layout-" + layout} ref={viewsRef}>
+            <div className="view3d-wrap" style={layout === "split" ? { flex: `0 0 ${split * 100}%` } : undefined}>
               <Viewport3D />
             </div>
             {layout === "split" && (
-              <div className="view2d-wrap">
-                <View2DOptions />
-                <Canvas2D />
-              </div>
+              <>
+                <div className="splitter" onPointerDown={startSplit} title="Sleep om de verhouding 3D / 2D aan te passen" />
+                <div className="view2d-wrap">
+                  <View2DOptions />
+                  <Canvas2D />
+                </div>
+              </>
             )}
           </div>
         </div>

@@ -4,6 +4,7 @@ import { resolveColor } from "../editor/render";
 import { useEditor } from "../editor/store";
 import type { ColorRef } from "../editor/types";
 import { ColorPicker } from "./ColorPicker";
+import { VariantsPanel } from "./VariantsPanel";
 
 /** Primary/secondary colour, picker, linked palette, recent colours and global recolour. */
 export function ColorPanel() {
@@ -148,6 +149,8 @@ export function ColorPanel() {
           <option value="shades">Tinten</option>
         </select>
       </div>
+
+      <VariantsPanel />
 
       <details className="recolor">
         <summary>Kleur vervangen in ontwerp</summary>

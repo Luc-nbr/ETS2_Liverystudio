@@ -1,7 +1,7 @@
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { canvasToPngBlob, preloadDoc, renderToCanvas } from "../editor/render";
 import { activeDoc, useEditor } from "../editor/store";
-import type { Project, TextureDoc } from "../editor/types";
+import type { PaletteColor, Project, TextureDoc } from "../editor/types";
 import { pickFile } from "../editor/importers";
 import { api, blobToBase64, isTauri } from "./api";
 import { writeAutosave } from "./autosave";
@@ -22,6 +22,37 @@ export function migrate(p: Project): Project {
   };
 }
 
+const RECENT_KEY = "ets2-livery-recent";
+export function recentProjects(): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]");
+    return Array.isArray(v) ? v.filter((x) => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+function pushRecent(path: string) {
+  try {
+    localStorage.setItem(RECENT_KEY, JSON.stringify([path, ...recentProjects().filter((p) => p !== path)].slice(0, 8)));
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Opens a project file from a known path (desktop only). */
+export async function openProjectPath(path: string) {
+  const s = useEditor.getState();
+  try {
+    const p = JSON.parse(await api.loadTextFile(path)) as Project;
+    if (p.version !== 1 || !Array.isArray(p.textures)) throw new Error("Onbekend projectformaat");
+    s.setProject(migrate(p), path);
+    pushRecent(path);
+    s.notify(`Project geopend: ${p.name}`);
+  } catch (e) {
+    s.notify(`Openen mislukt: ${e}`, "error");
+  }
+}
+
 export async function saveProject(saveAs = false) {
   const s = useEditor.getState();
   const json = JSON.stringify(s.project);
@@ -34,6 +65,7 @@ export async function saveProject(saveAs = false) {
         path = chosen;
       }
       await api.saveTextFile(path, json);
+      pushRecent(path);
       useEditor.setState({ projectPath: path, dirty: false });
     } else {
       download(new Blob([json], { type: "application/json" }), `${s.project.name}.liveryproj`);
@@ -49,21 +81,16 @@ export async function saveProject(saveAs = false) {
 export async function openProject() {
   const s = useEditor.getState();
   try {
-    let text: string;
-    let path: string | null = null;
     if (isTauri()) {
       const chosen = await open({ title: "Project openen", filters: [{ name: "Livery project", extensions: ["liveryproj", "json"] }] });
-      if (typeof chosen !== "string") return;
-      path = chosen;
-      text = await api.loadTextFile(chosen);
-    } else {
-      const f = await pickFile(".liveryproj,.json");
-      if (!f) return;
-      text = await f.text();
+      if (typeof chosen === "string") await openProjectPath(chosen);
+      return;
     }
-    const p = JSON.parse(text) as Project;
+    const f = await pickFile(".liveryproj,.json");
+    if (!f) return;
+    const p = JSON.parse(await f.text()) as Project;
     if (p.version !== 1 || !Array.isArray(p.textures)) throw new Error("Onbekend projectformaat");
-    s.setProject(migrate(p), path);
+    s.setProject(migrate(p), null);
     s.notify(`Project geopend: ${p.name}`);
   } catch (e) {
     s.notify(`Openen mislukt: ${e}`, "error");
@@ -71,10 +98,11 @@ export async function openProject() {
 }
 
 /** Renders a texture at full resolution, re-rasterising all vector/projected layers. */
-export async function renderFull(doc: TextureDoc): Promise<HTMLCanvasElement> {
+export async function renderFull(doc: TextureDoc, scale = 1, palette?: PaletteColor[]): Promise<HTMLCanvasElement> {
   const s = useEditor.getState();
   await preloadDoc(doc);
-  return renderToCanvas(doc, s.project.palette, doc.width, doc.height, undefined, { exportQuality: true });
+  const w = Math.max(64, Math.round(doc.width * scale)), h = Math.max(64, Math.round(doc.height * scale));
+  return renderToCanvas(doc, palette ?? s.project.palette, w, h, undefined, { exportQuality: true });
 }
 
 export async function exportPng() {

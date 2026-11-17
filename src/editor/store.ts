@@ -106,6 +106,10 @@ export interface EditorState {
   setSecondary: (c: ColorRef) => void;
   swapColors: () => void;
   applyColorToSelection: (c: ColorRef, target: "fill" | "stroke") => void;
+  addVariant: (name: string) => void;
+  switchVariant: (id: string) => void;
+  renameVariant: (id: string, name: string) => void;
+  removeVariant: (id: string) => void;
   copyLayers: (ids: string[], cut?: boolean) => void;
   pasteLayers: () => void;
   saveStripePreset: (p: StripePreset) => void;
@@ -458,6 +462,48 @@ export const useEditor = create<EditorState>((set, get) => {
       });
     },
 
+    addVariant: (name) => {
+      const p = get().project;
+      const colors = Object.fromEntries(p.palette.map((c) => [c.id, c.hex]));
+      let variants = p.variants ?? [];
+      let activeVariantId = p.activeVariantId ?? null;
+      if (!variants.length) {
+        // the current colours become the first variant
+        const first = { id: uid("var"), name: "Origineel", colors };
+        variants = [first];
+        activeVariantId = first.id;
+      } else if (activeVariantId) {
+        variants = variants.map((v) => (v.id === activeVariantId ? { ...v, colors } : v));
+      }
+      const v = { id: uid("var"), name, colors: { ...colors } };
+      commit({ ...p, variants: [...variants, v], activeVariantId: v.id }, true);
+    },
+
+    switchVariant: (id) => {
+      const p = get().project;
+      const variants = p.variants ?? [];
+      const target = variants.find((v) => v.id === id);
+      if (!target || id === p.activeVariantId) return;
+      const colors = Object.fromEntries(p.palette.map((c) => [c.id, c.hex]));
+      const saved = variants.map((v) => (v.id === p.activeVariantId ? { ...v, colors } : v));
+      const palette = p.palette.map((c) => ({ ...c, hex: target.colors[c.id] ?? c.hex }));
+      commit({ ...p, variants: saved, activeVariantId: id, palette }, true);
+    },
+
+    renameVariant: (id, name) => {
+      const p = get().project;
+      commit({ ...p, variants: (p.variants ?? []).map((v) => (v.id === id ? { ...v, name } : v)) }, false);
+    },
+
+    removeVariant: (id) => {
+      const p = get().project;
+      const variants = (p.variants ?? []).filter((v) => v.id !== id);
+      if (p.activeVariantId === id && variants.length) {
+        const t = variants[0];
+        commit({ ...p, variants, activeVariantId: t.id, palette: p.palette.map((c) => ({ ...c, hex: t.colors[c.id] ?? c.hex })) }, true);
+      } else commit({ ...p, variants, activeVariantId: variants.length ? p.activeVariantId : null }, true);
+    },
+
     copyLayers: (ids, cut = false) => {
       const doc = activeDoc(get().project);
       const layers = doc.layers.filter((l) => ids.includes(l.id) && l.type !== "fill");
@@ -521,3 +567,10 @@ export const useEditor = create<EditorState>((set, get) => {
 });
 
 export const useActiveDoc = () => useEditor((s) => activeDoc(s.project));
+
+/** Palette of a variant (falls back to the current palette for missing colours). */
+export function variantPalette(p: Project, variantId: string): PaletteColor[] {
+  if (variantId === p.activeVariantId) return p.palette;
+  const v = (p.variants ?? []).find((x) => x.id === variantId);
+  return p.palette.map((c) => ({ ...c, hex: v?.colors[c.id] ?? c.hex }));
+}

@@ -250,6 +250,8 @@ export interface ModSettings {
   mipmaps: boolean;
   packaging: "folder" | "scs";
   outputDir: string;
+  /** Export resolution relative to the texture size (1, 0.5, 0.25). */
+  exportScale?: number;
 }
 
 export interface VehicleRef {
@@ -260,6 +262,14 @@ export interface VehicleRef {
   modelPath: string | null;
 }
 
+/** A colour variant of the design: its own hex for every palette colour. */
+export interface ColorVariant {
+  id: string;
+  name: string;
+  /** paletteId → hex */
+  colors: Record<string, string>;
+}
+
 export interface Project {
   version: 1;
   name: string;
@@ -268,4 +278,7 @@ export interface Project {
   palette: PaletteColor[];
   vehicle: VehicleRef | null;
   mod: ModSettings;
+  /** Colour variants (exported as separate paint jobs). Empty/undefined = single design. */
+  variants?: ColorVariant[];
+  activeVariantId?: string | null;
 }

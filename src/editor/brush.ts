@@ -127,12 +127,24 @@ export class Brush3DStroke {
   private erase: boolean;
   private radius: number;
 
+  /** Raster content before this stroke, and the coverage painted so far in this stroke. */
+  private snapshot: HTMLCanvasElement;
+  private buffer: HTMLCanvasElement;
+
   constructor(erase: boolean) {
     const s = useEditor.getState();
     this.layer = ensureBrushLayer();
     s.checkpoint();
     this.erase = erase;
     this.radius = (s.brush.size * 0.001) / 2; // brush size is in millimetres in 3D
+    const canvas = getRasterCanvas(this.layer);
+    this.snapshot = document.createElement("canvas");
+    this.snapshot.width = canvas.width;
+    this.snapshot.height = canvas.height;
+    this.snapshot.getContext("2d")!.drawImage(canvas, 0, 0);
+    this.buffer = document.createElement("canvas");
+    this.buffer.width = canvas.width;
+    this.buffer.height = canvas.height;
   }
 
   add(p: V3, n: V3) {
@@ -167,8 +179,18 @@ export class Brush3DStroke {
     const s = useEditor.getState();
     const dabs = this.pending;
     this.pending = [];
+    // Accumulate full-strength coverage in the stroke buffer, then show
+    // snapshot + buffer × opacity: overlapping dabs never build up beyond the opacity.
+    getBaker().paintDabs(this.buffer, this.layer, dabs, resolveColor(s.primary, s.project.palette), s.brush.hardness, 1, false, s.symmetry);
     const canvas = getRasterCanvas(this.layer);
-    getBaker().paintDabs(canvas, this.layer, dabs, resolveColor(s.primary, s.project.palette), s.brush.hardness, s.brush.opacity, this.erase, s.symmetry);
+    const ctx = canvas.getContext("2d")!;
+    ctx.save();
+    ctx.globalCompositeOperation = "copy";
+    ctx.drawImage(this.snapshot, 0, 0);
+    ctx.globalCompositeOperation = this.erase ? "destination-out" : "source-over";
+    ctx.globalAlpha = s.brush.opacity;
+    ctx.drawImage(this.buffer, 0, 0);
+    ctx.restore();
     s.bumpRender();
   }
 

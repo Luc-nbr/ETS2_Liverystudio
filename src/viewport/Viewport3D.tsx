@@ -37,7 +37,8 @@ type Drag =
   | { kind: "create"; id: string; frame: Frame }
   | { kind: "node3d"; id: string; index: number; moved: boolean }
   | { kind: "nodePlane"; id: string; index: number; moved: boolean }
-  | { kind: "brush"; stroke: Brush3DStroke };
+  | { kind: "brush"; stroke: Brush3DStroke }
+  | { kind: "moveGroup"; start: Hit; orig: Layer[]; moved: boolean };
 
 type Draft = { kind: "path"; proj: Projection; frame: Frame; points: Vec2[] } | { kind: "line"; points: SurfacePoint[] };
 
@@ -445,6 +446,11 @@ class ViewportController {
           if (!e.shiftKey) s.select([]);
           return; // orbit
         }
+        if (!e.shiftKey && !e.ctrlKey && s.selection.length > 1 && s.selection.includes(l.id)) {
+          // move the whole selection together
+          this.drag = { kind: "moveGroup", start: hit, orig: doc.layers.filter((x) => s.selection.includes(x.id) && !x.locked), moved: false };
+          return take();
+        }
         if (e.shiftKey || e.ctrlKey) s.select([l.id], true);
         else s.select([l.id]);
         if (l.type === "surfaceLine") {
@@ -630,6 +636,26 @@ class ViewportController {
         s.updateLayer(d.id, { x: d.orig.x + hit.t.x * doc.width - d.start.x, y: d.orig.y + hit.t.y * doc.height - d.start.y }, false);
         return;
       }
+      case "moveGroup": {
+        const hit = this.pick(e.clientX, e.clientY);
+        if (!hit) return;
+        begin(d);
+        const dv: V3 = [hit.p[0] - d.start.p[0], hit.p[1] - d.start.p[1], hit.p[2] - d.start.p[2]];
+        const du = (hit.t.x - d.start.t.x) * doc.width, dvv = (hit.t.y - d.start.t.y) * doc.height;
+        const byId = new Map(d.orig.map((l) => [l.id, l]));
+        s.mapLayers(
+          d.orig.map((l) => l.id),
+          (cur) => {
+            const o = byId.get(cur.id)!;
+            if (o.type === "surfaceLine") return { ...cur, points: o.points.map((q) => ({ p: [q.p[0] + dv[0], q.p[1] + dv[1], q.p[2] + dv[2]] as V3, n: q.n })) } as Layer;
+            if (o.projection) return { ...cur, projection: { ...o.projection, origin: [o.projection.origin[0] + dv[0], o.projection.origin[1] + dv[1], o.projection.origin[2] + dv[2]] as V3 } };
+            if (o.type === "fill" || o.type === "raster") return cur;
+            return { ...cur, x: o.x + du, y: o.y + dvv };
+          },
+          false,
+        );
+        return;
+      }
       case "moveLine": {
         const hit = this.pick(e.clientX, e.clientY);
         if (!hit) return;
@@ -711,6 +737,10 @@ class ViewportController {
         const origin = fromPlane(frameOf(l.projection), tiny ? 0 : l.x, tiny ? 0 : l.y);
         s.updateLayer(l.id, { geometry: g, x: 0, y: 0, projection: { ...l.projection, origin } } as Partial<Layer>, false);
       }
+    }
+    if (d.kind === "moveGroup" && d.moved) {
+      const ids = new Set(d.orig.map((l) => l.id));
+      s.mapLayers([...ids], (l) => (l.type === "surfaceLine" ? ({ ...l, points: l.points.map((q) => this.snapToSurface(q.p, q.n)) } as Layer) : l), false);
     }
     if (d.kind === "moveLine" && d.moved) {
       const l = doc.layers.find((x) => x.id === d.id);

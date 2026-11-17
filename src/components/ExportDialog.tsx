@@ -50,7 +50,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
       const textures = [];
       for (const t of project.textures) {
         setBusy(`Textuur '${t.name}' bakken (${t.width}×${t.height})…`);
-        const blob = await canvasToPngBlob(await renderFull(t));
+        const blob = await canvasToPngBlob(await renderFull(t, mod.exportScale ?? 1));
         textures.push({ name: t.name, pngBase64: await blobToBase64(blob), cabinUnits: t.cabinUnits });
       }
       if (!tauri) {
@@ -158,6 +158,12 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
               <span>alternate_uvset</span>
             </label>
           </div>
+          <label>Resolutie</label>
+          <select value={mod.exportScale ?? 1} onChange={(e) => setMod({ exportScale: Number(e.target.value) })}>
+            <option value={1}>100% (zoals de textuur)</option>
+            <option value={0.5}>50% (kleiner bestand)</option>
+            <option value={0.25}>25% (snel testen)</option>
+          </select>
           <label>Verpakking</label>
           <select value={mod.packaging} onChange={(e) => setMod({ packaging: e.target.value as "folder" | "scs" })}>
             <option value="scs">.scs-bestand (aanbevolen)</option>

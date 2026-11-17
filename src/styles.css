@@ -957,3 +957,38 @@ details summary {
   padding: 0;
   z-index: 40;
 }
+.splitter {
+  width: 6px;
+  cursor: col-resize;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  flex: 0 0 6px;
+}
+.splitter:hover {
+  background: var(--accent);
+}
+.variants {
+  margin-top: 8px;
+}
+.variant-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.variant-row.on {
+  background: #23406b;
+}
+.variant-swatches {
+  display: flex;
+  padding: 2px;
+  gap: 1px;
+}
+.variant-swatches i {
+  width: 10px;
+  height: 16px;
+  display: block;
+}
