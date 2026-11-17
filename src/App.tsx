@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Canvas2D } from "./components/Canvas2D";
 import { ColorPanel } from "./components/ColorPanel";
 import { ExportDialog } from "./components/ExportDialog";
-import { GamePanel } from "./components/GamePanel";
+import { GamePanel, ensureTextureModel } from "./components/GamePanel";
 import { LayersPanel } from "./components/LayersPanel";
 import { LibraryPanel } from "./components/LibraryPanel";
 import { PropertiesPanel } from "./components/PropertiesPanel";
@@ -32,7 +32,12 @@ function TextureTabs() {
   return (
     <div className="tex-tabs">
       {textures.map((t) => (
-        <button key={t.id} className={"tab" + (t.id === activeId ? " on" : "")} onClick={() => st().setActiveTexture(t.id)} title={t.cabinUnits.join(", ") || "alle cabines"}>
+        <button key={t.id} className={"tab" + (t.id === activeId ? " on" : "")} onClick={() => {
+            st().setActiveTexture(t.id);
+            void ensureTextureModel(t.id);
+          }}
+          title={(t.cabinUnits.join(", ") || "alle cabines") + (t.model ? `\nModel: ${t.model.paths.join(" + ")}` : "")}
+        >
           {t.name} <span className="muted">{t.width}</span>
         </button>
       ))}

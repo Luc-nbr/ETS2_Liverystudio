@@ -6,6 +6,7 @@ import { useEditor } from "../editor/store";
 import { isPow2 } from "../editor/geometry";
 import { api, blobToBase64, isTauri, type ExportRequest, type ExportResult } from "../lib/api";
 import { renderFull } from "../lib/projectIO";
+import { ensureTextureModel } from "./GamePanel";
 import { viewport } from "../viewport/Viewport3D";
 import { ColorField } from "./fields";
 
@@ -48,11 +49,17 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
     setResult(null);
     try {
       const textures = [];
+      const restoreId = st().project.activeTextureId;
       for (const t of project.textures) {
+        if (t.model) {
+          setBusy(`Model voor '${t.name}' laden…`);
+          await ensureTextureModel(t.id);
+        }
         setBusy(`Textuur '${t.name}' bakken (${t.width}×${t.height})…`);
         const blob = await canvasToPngBlob(await renderFull(t, mod.exportScale ?? 1));
         textures.push({ name: t.name, pngBase64: await blobToBase64(blob), cabinUnits: t.cabinUnits });
       }
+      if (project.textures.some((t) => t.model)) await ensureTextureModel(restoreId);
       if (!tauri) {
         // Browser: hand out the textures as PNG downloads.
         for (const t of textures) {

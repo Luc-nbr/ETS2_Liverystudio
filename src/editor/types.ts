@@ -227,6 +227,11 @@ export interface TextureDoc {
   layers: Layer[];
   /** Optional UV template image (shown as overlay only, never exported). */
   template: string | null;
+  /**
+   * Game model(s) this texture belongs to. Projected (3D) layers are baked with this
+   * model's UVs, so one 3D design can be exported for several cabins with different UV layouts.
+   */
+  model?: { paths: string[]; uvChannel: number; flipV: boolean; paintable: string[] | null } | null;
 }
 
 export interface PaletteColor {

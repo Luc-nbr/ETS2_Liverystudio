@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { api, isTauri, type VehicleInfo } from "../lib/api";
-import { makeTexture } from "../editor/factory";
+import { makeTexture, uid } from "../editor/factory";
 import { importTemplate, pickFile } from "../editor/importers";
-import { useEditor } from "../editor/store";
+import { activeDoc, useEditor } from "../editor/store";
 import { rebuildMesh, setFlipV } from "../viewport/state";
 
 /** Loads a model into the 3D view. `add` keeps the current model(s) and shows this one too. */
@@ -23,6 +23,7 @@ export async function loadModel(pmdPath: string, add = false) {
     }
     st.set({ paintableOverride: null });
     rebuildMesh();
+    bindModelToActiveTexture();
     const paintable = model.materials.filter((m) => m.paintable).length;
     st.notify(
       paintable ? `Model geladen — ${paintable} lakbare materia(a)l(en)` : "Model geladen — geen 'truckpaint'-materiaal gevonden; kies bij 'Lakbare materialen' wat lakbaar is",
@@ -33,11 +34,46 @@ export async function loadModel(pmdPath: string, add = false) {
   }
 }
 
+/** Remembers the currently shown model(s) on the active texture. */
+function bindModelToActiveTexture() {
+  const s = useEditor.getState();
+  if (!s.game.model) return;
+  s.updateTexture(
+    s.project.activeTextureId,
+    { model: { paths: [s.game.model.path, ...s.game.extraModels.map((m) => m.path)], uvChannel: s.uv.channel, flipV: s.uv.flipV, paintable: s.paintableOverride } },
+    false,
+  );
+}
+
+const sameModels = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i]);
+
+/** Makes sure the 3D view shows the model(s) a texture was designed on (no-op when already shown). */
+export async function ensureTextureModel(docId: string): Promise<void> {
+  const s = useEditor.getState();
+  const doc = s.project.textures.find((t) => t.id === docId);
+  const want = doc?.model;
+  if (!want || !isTauri()) return;
+  const shown = s.game.model ? [s.game.model.path, ...s.game.extraModels.map((m) => m.path)] : [];
+  if (sameModels(shown, want.paths) && s.uv.channel === want.uvChannel && s.uv.flipV === want.flipV) return;
+  s.setGame({ loading: "Model van deze textuur laden…", error: null });
+  try {
+    const models = await Promise.all(want.paths.map((p) => api.loadModel(p, 0)));
+    const st = useEditor.getState();
+    st.setGame({ model: models[0], extraModels: models.slice(1), loading: null });
+    st.set({ paintableOverride: want.paintable, uv: { ...st.uv, channel: want.uvChannel, flipV: want.flipV } });
+    rebuildMesh();
+    setFlipV(want.flipV);
+  } catch (e) {
+    useEditor.getState().setGame({ loading: null, error: String(e) });
+  }
+}
+
 export function removeExtraModel(path: string) {
   const s = useEditor.getState();
   s.setGame({ extraModels: s.game.extraModels.filter((m) => m.path !== path) });
   s.set({ paintableOverride: null });
   rebuildMesh();
+  bindModelToActiveTexture();
 }
 
 export function GamePanel() {
@@ -183,13 +219,20 @@ export function GamePanel() {
                   title="Maak een aparte textuur die alleen voor deze cabine geëxporteerd wordt (suitable_for)"
                   onClick={() => {
                     const name = c.unitName.split(".")[0].replace(/[^a-z0-9_]/g, "_").slice(0, 12) || "cab";
-                    const doc = makeTexture(name, 4096, 4096);
+                    const src = activeDoc(st().project);
+                    const doc = makeTexture(name, src.width, src.height);
                     doc.cabinUnits = [c.unitName];
+                    // Carry over the background and every 3D design: they re-bake onto this cabin's UVs.
+                    doc.layers = [
+                      ...src.layers.filter((l, i) => i === 0 && l.type === "fill"),
+                      ...src.layers.filter((l) => l.type === "surfaceLine" || (l.projection && l.type !== "fill" && l.type !== "raster")),
+                    ].map((l) => ({ ...JSON.parse(JSON.stringify(l)), id: uid("layer") }));
+                    if (!doc.layers.length || doc.layers[0].type !== "fill") doc.layers.unshift(makeTexture("x", src.width, src.height).layers[0]);
                     st().addTexture(doc);
                     if (c.models[0]) void loadModel(c.models[0]);
                   }}
                 >
-                  + Textuur voor cabine
+                  + Textuur voor cabine (neemt 3D-ontwerp over)
                 </button>
               </div>
             </div>
@@ -243,6 +286,7 @@ export function GamePanel() {
               onChange={(e) => {
                 st().set({ uv: { ...uv, channel: Number(e.target.value) } });
                 rebuildMesh();
+                bindModelToActiveTexture();
               }}
             >
               {Array.from({ length: Math.max(1, uv.channelsAvailable) }, (_, i) => (
@@ -253,13 +297,21 @@ export function GamePanel() {
             </select>
           </label>
           <label className="field check">
-            <input type="checkbox" checked={uv.flipV} onChange={(e) => setFlipV(e.target.checked)} />
+            <input
+              type="checkbox"
+              checked={uv.flipV}
+              onChange={(e) => {
+                setFlipV(e.target.checked);
+                bindModelToActiveTexture();
+              }}
+            />
             <span>V omkeren</span>
           </label>
           {game.model && (
             <button
               onClick={() => {
                 st().setGame({ model: null, extraModels: [] });
+                st().updateTexture(st().project.activeTextureId, { model: null }, false);
                 rebuildMesh();
               }}
             >
@@ -287,6 +339,7 @@ export function GamePanel() {
                           const base = override ?? auto;
                           st().set({ paintableOverride: on ? base.filter((k) => k !== key) : [...base, key] });
                           rebuildMesh();
+                          bindModelToActiveTexture();
                         }}
                       />
                       <span title={m.path}>
