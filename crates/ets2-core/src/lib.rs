@@ -12,6 +12,7 @@ pub mod cityhash;
 pub mod error;
 pub mod export;
 pub mod game;
+pub mod gdeflate;
 pub mod hashfs;
 pub mod model;
 pub mod sii;
