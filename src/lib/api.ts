@@ -175,6 +175,13 @@ export interface ExportResult {
   warnings: string[];
 }
 
+export interface TextureData {
+  width: number;
+  height: number;
+  /** PNG, base64 (no data: prefix) */
+  pngBase64: string;
+}
+
 // ---------------------------------------------------------------------------
 // Commands
 // ---------------------------------------------------------------------------
@@ -193,6 +200,9 @@ export const api = {
   saveTextFile: (path: string, contents: string) =>
     invoke<void>("save_text_file", { path, contents }),
   loadTextFile: (path: string) => invoke<string>("load_text_file", { path }),
+  /** Reads a game texture (.tobj/.dds/.png/.mat; also GDeflate-packed HashFS v2 images) as PNG,
+   * downscaled so the longest side is at most maxSize (0 = full size). */
+  readTexture: (path: string, maxSize: number) => invoke<TextureData>("read_texture", { path, maxSize }),
   /** Writes base64 bytes to an arbitrary path (PNG export etc.) */
   saveBinaryFile: (path: string, base64: string) =>
     invoke<void>("save_binary_file", { path, base64 }),

@@ -41,6 +41,48 @@ pub trait Archive: Send + Sync {
     fn read(&self, path: &str) -> Result<Vec<u8>>;
     /// Names (not full paths) of the direct children, or `None` when `path` is not a directory here.
     fn list_dir(&self, path: &str) -> Result<Option<DirListing>>;
+    /// HashFS v2 stores textures as packed image entries under the `.tobj` path. Returns the
+    /// decompressed surface data when `path` is such an entry, `None` for ordinary files.
+    fn read_packed_texture(&self, _path: &str) -> Result<Option<PackedTexture>> {
+        Ok(None)
+    }
+}
+
+/// A texture stored as a HashFS v2 image entry (tobj + dds packed together).
+#[derive(Debug, Clone)]
+pub struct PackedTexture {
+    pub width: u32,
+    pub height: u32,
+    pub mip_count: u32,
+    /// DXGI_FORMAT value
+    pub format: u32,
+    pub is_cube: bool,
+    pub face_count: u32,
+    pub pitch_alignment: u32,
+    pub image_alignment: u32,
+    /// Surface data in the HashFS layout (rows / images aligned), all faces and mips.
+    pub surface: Vec<u8>,
+}
+
+/// PackedTobjDdsMetadata (12 bytes before the main metadata of an image entry).
+#[derive(Debug, Clone, Copy)]
+struct ImageMeta {
+    width: u32,
+    height: u32,
+    image_flags: u32,
+}
+
+impl ImageMeta {
+    fn parse(b: &[u8]) -> Self {
+        ImageMeta {
+            width: rd_u16(b, 0) as u32 + 1,
+            height: rd_u16(b, 2) as u32 + 1,
+            image_flags: rd_u32(b, 4),
+        }
+    }
+    fn bits(&self, start: u32, count: u32) -> u32 {
+        (self.image_flags >> start) & ((1 << count) - 1)
+    }
 }
 
 /// Normalises a virtual path to `/a/b` form (root = `/`).
@@ -111,6 +153,7 @@ struct HashEntry {
     is_compressed: bool,
     /// v2 packed texture (tobj+dds), data is GDeflate compressed
     is_image: bool,
+    image: Option<ImageMeta>,
 }
 
 pub struct HashFsArchive {
@@ -216,6 +259,7 @@ impl HashFsArchive {
                 is_dir: flags & 1 != 0,
                 is_compressed: flags & 2 != 0,
                 is_image: false,
+                image: None,
             };
             match self.entries.get(&hash) {
                 None => {
@@ -290,6 +334,7 @@ impl HashFsArchive {
                     is_dir: first_type == 129,
                     is_compressed,
                     is_image,
+                    image: if is_image { Some(ImageMeta::parse(&meta[pos..pos + 12])) } else { None },
                 },
             );
         }
@@ -299,7 +344,7 @@ impl HashFsArchive {
     fn entry_content(&self, e: &HashEntry) -> Result<Vec<u8>> {
         if e.is_image {
             return Err(Error::Unsupported(
-                "packed HashFS v2 textures (GDeflate) cannot be read yet".into(),
+                "packed HashFS v2 texture: use the texture reader (read_texture) for this path".into(),
             ));
         }
         if e.is_compressed {
@@ -390,6 +435,24 @@ impl Archive for HashFsArchive {
             None => Err(Error::NotFound(path.to_string())),
         }
     }
+    fn read_packed_texture(&self, path: &str) -> Result<Option<PackedTexture>> {
+        let Some(e) = self.lookup(path) else { return Ok(None) };
+        let (true, Some(m)) = (e.is_image, e.image) else { return Ok(None) };
+        let raw = self.read_at(e.offset, e.compressed_size as usize)?;
+        let surface = if e.is_compressed { crate::gdeflate::decompress(&raw)? } else { raw };
+        Ok(Some(PackedTexture {
+            width: m.width,
+            height: m.height,
+            mip_count: m.bits(0, 4) + 1,
+            format: m.bits(4, 8),
+            is_cube: m.bits(12, 2) != 0,
+            face_count: m.bits(14, 6) + 1,
+            pitch_alignment: 1 << m.bits(20, 4),
+            image_alignment: 1 << m.bits(24, 4),
+            surface,
+        }))
+    }
+
     fn list_dir(&self, path: &str) -> Result<Option<DirListing>> {
         let p = normalize(path);
         let key = if p == "/" { "" } else { &p[1..] };
@@ -661,6 +724,16 @@ impl Vfs {
             }
         }
         Err(last_err.unwrap_or_else(|| Error::NotFound(normalize(path))))
+    }
+
+    /// Packed (HashFS v2) texture stored under `path` in the top-most archive that has it.
+    pub fn read_packed_texture(&self, path: &str) -> Result<Option<PackedTexture>> {
+        for a in self.archives.iter().rev() {
+            if a.exists(path) == Some(EntryKind::File) {
+                return a.read_packed_texture(path);
+            }
+        }
+        Ok(None)
     }
 
     pub fn read_text(&self, path: &str) -> Result<String> {

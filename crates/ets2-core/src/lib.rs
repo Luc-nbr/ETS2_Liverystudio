@@ -6,6 +6,8 @@
 //! * [`game`]     – game installation detection and vehicle indexing
 //! * [`model`]    – PMD/PMG model + .mat parsing
 //! * [`texture`]  – DDS and TOBJ writers
+//! * [`texture_read`] – reading game textures (tobj/dds/packed v2) to PNG
+//! * [`gdeflate`] – GDeflate decompression for HashFS v2 textures
 //! * [`export`]   – paint job mod builder
 
 pub mod cityhash;
@@ -17,5 +19,6 @@ pub mod hashfs;
 pub mod model;
 pub mod sii;
 pub mod texture;
+pub mod texture_read;
 
 pub use error::{Error, Result};

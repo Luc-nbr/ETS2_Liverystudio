@@ -27,6 +27,7 @@ pub fn run() {
             commands::save_text_file,
             commands::load_text_file,
             commands::save_binary_file,
+            commands::read_texture,
         ])
         .run(tauri::generate_context!())
         .expect("error while running ETS2 Livery Studio");

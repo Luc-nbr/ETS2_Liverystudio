@@ -128,3 +128,24 @@ pub async fn save_binary_file(path: String, base64: String) -> CmdResult<()> {
     })
     .await
 }
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TextureData {
+    pub width: u32,
+    pub height: u32,
+    pub png_base64: String,
+}
+
+/// Reads a game texture (.tobj/.dds/.png/.mat, incl. GDeflate-packed HashFS v2 images) as PNG.
+#[tauri::command]
+pub async fn read_texture(state: Shared<'_>, path: String, max_size: u32) -> CmdResult<TextureData> {
+    let state = Arc::clone(&state);
+    blocking(move || {
+        with_session(&state, |s| {
+            let (width, height, png) = ets2_core::texture_read::read_texture(&s.vfs, &path, max_size).map_err(|e| e.to_string())?;
+            Ok(TextureData { width, height, png_base64: base64::engine::general_purpose::STANDARD.encode(png) })
+        })
+    })
+    .await
+}

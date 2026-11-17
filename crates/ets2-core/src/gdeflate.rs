@@ -612,7 +612,7 @@ mod tests {
             toks.push(Tok::Lit(b'a' + i % 26));
             expect.push(b'a' + i % 26);
         }
-        let mut push_match = |toks: &mut Vec<Tok>, expect: &mut Vec<u8>, len: usize, dist: usize| {
+        let push_match = |toks: &mut Vec<Tok>, expect: &mut Vec<u8>, len: usize, dist: usize| {
             toks.push(Tok::Match { len, dist });
             let start = expect.len();
             for k in 0..len {
