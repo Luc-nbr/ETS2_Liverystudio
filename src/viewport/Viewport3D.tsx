@@ -131,6 +131,7 @@ class ViewportController {
       this.overlayDirty = true;
     });
     el.addEventListener("dblclick", this.onDblClick);
+    el.addEventListener("wheel", this.onWheel, { capture: true, passive: false });
     el.addEventListener("contextmenu", (e) => e.preventDefault());
     window.addEventListener("keydown", this.onKey);
 
@@ -758,6 +759,31 @@ class ViewportController {
     }
   };
 
+  /** Shift+scroll = rotate, Ctrl+scroll = scale the selected design(s); plain scroll zooms the camera. */
+  onWheel = (e: WheelEvent) => {
+    if (!e.shiftKey && !e.ctrlKey) return;
+    const s = useEditor.getState();
+    const doc = activeDoc(s.project);
+    const sel = doc.layers.filter((l) => s.selection.includes(l.id) && !l.locked && l.type !== "fill" && l.type !== "raster" && l.type !== "surfaceLine");
+    if (!sel.length) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    const dir = Math.sign(e.deltaY || e.deltaX);
+    if (!this.wheelSession) {
+      s.checkpoint();
+      this.wheelSession = true;
+    }
+    window.clearTimeout(this.wheelTimer);
+    this.wheelTimer = window.setTimeout(() => (this.wheelSession = false), 400);
+    s.mapLayers(
+      sel.map((l) => l.id),
+      (l) => (e.shiftKey ? { ...l, rotation: normalizeAngle(l.rotation - dir * 5) } : { ...l, scaleX: l.scaleX * (dir < 0 ? 1.05 : 1 / 1.05), scaleY: l.scaleY * (dir < 0 ? 1.05 : 1 / 1.05) }),
+      false,
+    );
+  };
+  wheelSession = false;
+  wheelTimer = 0;
+
   onDblClick = () => {
     if (this.draft) this.finishDraft(false);
   };
@@ -1040,7 +1066,7 @@ function ViewportHud() {
   const projectFrom = useEditor((s) => s.projectFrom);
   const set = useEditor((s) => s.set);
   const hints: Record<string, string> = {
-    select: "Klik op een ontwerp om te selecteren · sleep = verplaatsen over het oppervlak (Ctrl = in vlak schuiven) · hoeken = schalen · bol = draaien",
+    select: "Klik op een ontwerp om te selecteren · sleep = verplaatsen over het oppervlak (Ctrl = in vlak schuiven) · hoeken = schalen · bol = draaien · Shift/Ctrl+scroll = draaien/schalen",
     brush: "Schilder direct op het model · Alt/rechts slepen = draaien",
     eraser: "Gum op de penseellaag",
     stripes: "Klik punten óp het model · dubbelklik/Enter = klaar · lijn loopt naadloos om hoeken",

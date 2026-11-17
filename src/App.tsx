@@ -155,6 +155,7 @@ const SHORTCUTS: [string, string][] = [
   ["Backspace / Esc", "Laatste punt weg / annuleren"],
   ["Shift (slepen)", "Proportioneel schalen, draaien per 15°"],
   ["Ctrl (slepen)", "Decal in zijn vlak schuiven"],
+  ["Shift+scroll · Ctrl+scroll", "Selectie draaien · schalen (in 3D)"],
   ["Pijltjes (+Shift)", "Selectie 1 (10) px verplaatsen"],
   ["Ctrl+Z / Ctrl+Y", "Ongedaan maken / opnieuw"],
   ["Ctrl+C · Ctrl+X · Ctrl+V", "Lagen kopiëren · knippen · plakken (ook naar andere textuur)"],

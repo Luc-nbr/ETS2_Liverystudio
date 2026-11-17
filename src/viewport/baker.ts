@@ -438,6 +438,14 @@ export class Baker {
     return e.canvas;
   }
 
+  /** Alpha (0..255) of a layer's cached preview bake at texture coordinate (u, v) in doc orientation. */
+  cachedAlphaAt(layerId: string, u: number, v: number): number {
+    const e = this.cache.get(layerId);
+    if (!e) return 0;
+    const x = Math.min(e.w - 1, Math.max(0, Math.floor(u * e.w))), y = Math.min(e.h - 1, Math.max(0, Math.floor(v * e.h)));
+    return e.canvas.getContext("2d", { willReadFrequently: true })!.getImageData(x, y, 1, 1).data[3];
+  }
+
   /** Drop cache entries of layers that no longer exist. */
   prune(liveIds: Set<string>) {
     for (const id of this.cache.keys()) if (!liveIds.has(id)) this.cache.delete(id);

@@ -7,7 +7,8 @@ import { BrushStroke } from "../editor/brush";
 import { makeShape, makeStripes, makeText } from "../editor/factory";
 import { DEG, docCorners, hitTest, localBounds, recenter, smoothPolyline, toDoc, toLocal } from "../editor/geometry";
 import { importImageFile } from "../editor/importers";
-import { getImage, renderDoc } from "../editor/render";
+import { getImage, isProjected, renderDoc } from "../editor/render";
+import { getBaker } from "../viewport/baker";
 import { activeDoc, allStripePresets, useEditor } from "../editor/store";
 import type { Layer, ShapeLayer, StripesLayer, TextureDoc, Vec2 } from "../editor/types";
 
@@ -368,13 +369,21 @@ export function Canvas2D() {
           }
         }
         const tol = 4 / s.view.zoom;
-        const hit = [...doc.layers].reverse().find((l) => l.visible && !l.locked && hitTest(l, p, doc.width, doc.height, tol));
+        // UV-space layers by geometry, 3D (projected) layers by their baked pixels
+        const hit = [...doc.layers]
+          .reverse()
+          .find(
+            (l) =>
+              l.visible &&
+              !l.locked &&
+              (isProjected(l) ? getBaker().cachedAlphaAt(l.id, p.x / doc.width, p.y / doc.height) > 20 : hitTest(l, p, doc.width, doc.height, tol)),
+          );
         if (hit) {
           if (e.shiftKey || e.ctrlKey) s.select([hit.id], true);
           else if (!s.selection.includes(hit.id)) s.select([hit.id]);
           const ids = useEditor.getState().selection;
           const orig = new Map<string, Vec2>();
-          for (const l of doc.layers) if (ids.includes(l.id) && !l.locked) orig.set(l.id, { x: l.x, y: l.y });
+          for (const l of doc.layers) if (ids.includes(l.id) && !l.locked && !isProjected(l)) orig.set(l.id, { x: l.x, y: l.y });
           dragRef.current = { kind: "move", start: p, orig, moved: false };
         } else if (!e.shiftKey) {
           s.select([]);
