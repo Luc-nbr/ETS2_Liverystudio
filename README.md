@@ -39,6 +39,8 @@ Een Windows-programma (Tauri 2) om skins/paintjobs voor **Euro Truck Simulator 2
   - Uitknipmaskers, schaduw/gloed, dupliceren en volgorde aanpassen.
   - Ongedaan maken en opnieuw; kopiëren/knippen/plakken (ook naar een andere textuur).
   - Eigen lijnontwerp-voorinstellingen bewaren.
+- **Eén 3D-ontwerp voor meerdere cabines:** elke textuur onthoudt zijn eigen model. Met *+ Textuur voor cabine* neem je alle 3D-ontwerpen over; die worden automatisch op de UV-indeling van die cabine gebakken, ook bij export.
+- **Kleurvarianten:** hetzelfde ontwerp in meerdere paletten (bijv. blauw/rood/groen); alleen gekoppelde paletkleuren wisselen mee.
 - **Meerdere modellen tegelijk** in 3D (bijv. cabine + chassis), met per materiaal te kiezen wat lakbaar is.
 - **Lakvoorbeeld** (✦ Lak): basiskleur van de paintjob (zichtbaar door transparante delen, zoals in het spel), metallic, ruwheid en blanke lak.
 - **Automatisch opslaan** elke minuut, met herstel na een crash. Sneltoetsenoverzicht met `?`.
@@ -78,6 +80,9 @@ Zonder spel geïnstalleerd (of in de browser) kun je ontwerpen op een ingebouwde
 | Pad of lijn afronden | dubbelklik of Enter (Backspace = laatste punt weg, Esc = annuleren) |
 | Decal in zijn vlak schuiven (i.p.v. over het oppervlak) | Ctrl + slepen |
 | Proportioneel schalen / draaien in stappen van 15° | Shift |
+| Selectie draaien / schalen in 3D | Shift+scroll / Ctrl+scroll |
+| Lagen kopiëren / knippen / plakken | Ctrl+C / Ctrl+X / Ctrl+V |
+| Sneltoetsenoverzicht | ? |
 | Ongedaan maken / opnieuw / dupliceren / opslaan | Ctrl+Z / Ctrl+Y / Ctrl+D / Ctrl+S |
 | Kleuren wisselen, penseelgrootte | X, [ en ] |
 
